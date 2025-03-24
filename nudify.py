@@ -98,6 +98,24 @@ def save_black_inverted_alpha(clothes_mask, output_path):
     safe_print(f"✅ Mask (grown, no blur) saved: {output_path}")
 
 
+def resize_to_fhd_keep_aspect(image, target_width=1920, target_height=1080):
+    original_width, original_height = image.size
+    aspect_ratio = original_width / original_height
+
+    # Compute new size maintaining aspect ratio
+    if (target_width / target_height) > aspect_ratio:
+        # Fit to height
+        new_height = target_height
+        new_width = int(aspect_ratio * target_height)
+    else:
+        # Fit to width
+        new_width = target_width
+        new_height = int(target_width / aspect_ratio)
+
+    resized_image = image.resize((new_width, new_height), Image.LANCZOS)
+    return resized_image
+
+
 # ======== INPAINTING FUNCTION ========
 def inpaint_with_retry(image_path, mask_path):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -116,9 +134,13 @@ def inpaint_with_retry(image_path, mask_path):
             safe_print(f"❌ Failed to load pipeline (attempt {retries}). Error: {e}")
             time.sleep(5)
 
-    # Load images
-    image = Image.open(image_path).convert("RGB")
-    mask = Image.open(mask_path).convert("L")
+    # Load original image & mask
+    original_image = Image.open(image_path).convert("RGB")
+    original_mask = Image.open(mask_path).convert("L")
+
+    # Resize both to FHD keeping aspect ratio
+    image = resize_to_fhd_keep_aspect(original_image)
+    mask = resize_to_fhd_keep_aspect(original_mask)
 
     prompt = "naked body, realistic skin texture, no clothes"
 
