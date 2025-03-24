@@ -126,7 +126,7 @@ def inpaint_with_retry(image_path, mask_path):
     prompt = "naked body, realistic skin texture, no clothes"
 
     def progress_callback(step, timestep, latents, extra_data):
-        print(f"Inpainting progress: Step {step + 1} / 30")
+        print(f"Inpainting progress: Step {step} / 30")
 
     retries = 0
     while True:  # Infinite retry loop for inpainting
