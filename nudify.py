@@ -9,6 +9,8 @@ import sys
 import io
 import time
 
+# Use python 3.11 for this script
+
 # Run this once
 # pip install torch diffusers transformers pillow numpy opencv-python accelerate sentencepiece
 
@@ -16,9 +18,9 @@ import time
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 
 # ======== CONFIGURATION ========
-INPUT_IMAGE_PATH = "example_input_images/input_image_4.jpg"
-MASK_OUTPUT_PATH = "example_output_masks/clothes_mask_alpha_4.png"
-INPAINTED_OUTPUT_PATH = "example_output_pictures/nudified_output_4.png"
+INPUT_IMAGE_PATH = "example_input_images/input_image_6.jpg"
+MASK_OUTPUT_PATH = "example_output_masks/clothes_mask_alpha_6.png"
+INPAINTED_OUTPUT_PATH = "example_output_images/nudified_output_6.png"
 MASK_GROW_PIXELS = 10  # Amount to grow (dilate) mask
 
 
