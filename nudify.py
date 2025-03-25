@@ -21,7 +21,7 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 INPUT_IMAGE_PATH = "example_input_images/input_image_6.jpg"
 MASK_OUTPUT_PATH = "example_output_masks/clothes_mask_alpha_6.png"
 INPAINTED_OUTPUT_PATH = "example_output_images/nudified_output_6.png"
-MASK_GROW_PIXELS = 10  # Amount to grow (dilate) mask
+MASK_GROW_PIXELS = 15  # Amount to grow (dilate) mask
 
 
 # ======== SAFE PRINT FUNCTION ========
@@ -54,6 +54,7 @@ def load_segmentation_model():
         model = AutoModelForSemanticSegmentation.from_pretrained(
             "sayeed99/segformer_b3_clothes"
         )
+        model.eval()
         safe_print("✅ Segmentation model loaded.")
         return processor, model
     except Exception as e:
@@ -61,7 +62,10 @@ def load_segmentation_model():
 
 
 # ======== GENERATE CLOTHES MASK ========
-def generate_clothing_mask(model, inputs, original_size):
+def generate_clothing_mask(model, processor, image):
+    device = torch.device("cpu")  # Force CPU inference
+    inputs = processor(images=image, return_tensors="pt").to(device)
+
     with torch.no_grad():
         outputs = model(**inputs)
     logits = outputs.logits
@@ -73,67 +77,76 @@ def generate_clothing_mask(model, inputs, original_size):
 
     # Resize to original image size
     clothes_mask_resized = cv2.resize(
-        clothes_mask,
-        (original_size[0], original_size[1]),
-        interpolation=cv2.INTER_NEAREST,
+        clothes_mask, image.size, interpolation=cv2.INTER_NEAREST
     )
+
+    if np.count_nonzero(clothes_mask_resized) == 0:
+        raise ValueError("⚠️ No clothing detected in the image.")
+
     return clothes_mask_resized
 
 
 # ======== APPLY MASK GROW AND SAVE ========
-def save_black_inverted_alpha(clothes_mask, output_path):
-    h, w = clothes_mask.shape
-    black = Image.new("RGB", (w, h), (0, 0, 0))
+def save_black_inverted_alpha(clothes_mask, output_path, mask_grow_pixels=15):
+    mask = (clothes_mask * 255).astype(np.uint8)  # Convert 1s to 255 (white mask)
 
-    # Invert mask: Clothes = 0 (transparent), Rest = 255 (opaque)
-    alpha = np.where(clothes_mask == 1, 0, 255).astype(np.uint8)
+    dilate_size = max(5, mask_grow_pixels)  # Ensure mask grows sufficiently
+    close_size = max(3, mask_grow_pixels // 3)  # Ensure minimum size of 3
 
-    # --- Grow the mask using dilation ---
-    kernel = np.ones((MASK_GROW_PIXELS, MASK_GROW_PIXELS), np.uint8)
-    alpha = cv2.dilate(alpha, kernel, iterations=1)
+    dilate_kernel = cv2.getStructuringElement(
+        cv2.MORPH_ELLIPSE, (dilate_size, dilate_size)
+    )
+    close_kernel = cv2.getStructuringElement(
+        cv2.MORPH_ELLIPSE, (close_size, close_size)
+    )
 
-    # Save
-    alpha_image = Image.fromarray(alpha)
-    result = black.convert("RGBA")
-    result.putalpha(alpha_image)
-    result.save(output_path)
-    safe_print(f"✅ Mask (grown, no blur) saved: {output_path}")
+    # --- Expand the mask slightly to remove unwanted artifacts ---
+    mask = cv2.dilate(mask, dilate_kernel, iterations=1)
+
+    # --- Smooth edges to avoid harsh transitions ---
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, close_kernel)
+
+    # Apply a Gaussian blur for extra smoothing
+    blur_ksize = max(5, (mask_grow_pixels // 2) * 2 + 1)  # Ensure odd kernel size
+    mask = cv2.GaussianBlur(mask, (blur_ksize, blur_ksize), sigmaX=0, sigmaY=0)
+
+    # Save as grayscale PNG
+    Image.fromarray(mask).save(output_path)
+    safe_print(f"✅ Fixed mask saved as grayscale: {output_path}")
 
 
+# ======== RESIZE FUNCTION FOR INPAINTING ========
 def resize_to_fhd_keep_aspect(image, target_width=1920, target_height=1080):
     original_width, original_height = image.size
     aspect_ratio = original_width / original_height
 
-    # Compute new size maintaining aspect ratio
     if (target_width / target_height) > aspect_ratio:
-        # Fit to height
         new_height = target_height
         new_width = int(aspect_ratio * target_height)
     else:
-        # Fit to width
         new_width = target_width
         new_height = int(target_width / aspect_ratio)
 
-    resized_image = image.resize((new_width, new_height), Image.LANCZOS)
-    return resized_image
+    return image.resize((new_width, new_height), Image.LANCZOS)
 
 
 # ======== INPAINTING FUNCTION ========
-def inpaint_with_retry(image_path, mask_path):
+def inpaint_with_retry(image_path, mask_path, max_retries=3):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     safe_print(f"🟢 Using device: {device}")
 
-    retries = 0
-    while True:
+    for attempt in range(1, max_retries + 1):
         try:
-            safe_print("🟡 Loading FluxFillPipeline...")
-            pipe = FluxFillPipeline.from_pretrained("black-forest-labs/FLUX.1-Fill-dev")
-            pipe = pipe.to(device)
+            safe_print(f"🟡 Loading FluxFillPipeline (Attempt {attempt})...")
+            pipe = FluxFillPipeline.from_pretrained(
+                "black-forest-labs/FLUX.1-Fill-dev"
+            ).to(device)
             safe_print("✅ FluxFillPipeline loaded.")
             break
         except Exception as e:
-            retries += 1
-            safe_print(f"❌ Failed to load pipeline (attempt {retries}). Error: {e}")
+            safe_print(f"❌ Failed to load pipeline (Attempt {attempt}). Error: {e}")
+            if attempt == max_retries:
+                raise RuntimeError("🚨 Pipeline failed after multiple attempts.")
             time.sleep(5)
 
     # Load original image & mask
@@ -146,26 +159,20 @@ def inpaint_with_retry(image_path, mask_path):
 
     prompt = "naked body, realistic skin texture, no clothes"
 
-    retries = 0
-    while True:
+    for attempt in range(1, max_retries + 1):
         try:
-            safe_print("🟢 Starting inpainting...")
+            safe_print(f"🟢 Starting inpainting (Attempt {attempt})...")
             result = pipe(
-                prompt=prompt,
-                image=image,
-                mask_image=mask,
-                num_inference_steps=30,
+                prompt=prompt, image=image, mask_image=mask, num_inference_steps=30
             ).images[0]
-
-            # Ensure same size output
-            result = result.resize(image.size)
-
+            result = result.resize(original_image.size)  # Ensure same size output
             result.save(INPAINTED_OUTPUT_PATH)
             safe_print(f"✅ Inpainting done. Saved as '{INPAINTED_OUTPUT_PATH}'.")
-            break
+            return
         except Exception as e:
-            retries += 1
-            safe_print(f"❌ Inpainting failed (attempt {retries}). Error: {e}")
+            safe_print(f"❌ Inpainting failed (Attempt {attempt}). Error: {e}")
+            if attempt == max_retries:
+                raise RuntimeError("🚨 Inpainting failed after multiple attempts.")
             time.sleep(5)
 
 
@@ -174,10 +181,8 @@ def main():
     try:
         image = load_image(INPUT_IMAGE_PATH)
         processor, model = load_segmentation_model()
-        inputs = processor(images=image, return_tensors="pt")
-        clothes_mask = generate_clothing_mask(model, inputs, image.size)
-
-        save_black_inverted_alpha(clothes_mask, MASK_OUTPUT_PATH)
+        clothes_mask = generate_clothing_mask(model, processor, image)
+        save_black_inverted_alpha(clothes_mask, MASK_OUTPUT_PATH, MASK_GROW_PIXELS)
         inpaint_with_retry(INPUT_IMAGE_PATH, MASK_OUTPUT_PATH)
     except Exception as e:
         safe_print(f"❌ Error: {e}")
