@@ -147,19 +147,20 @@ def save_black_inverted_alpha(clothes_mask, output_path, mask_grow_pixels=15):
 
 
 # ======== RESIZE FUNCTION FOR INPAINTING ========
-def resize_to_fhd_keep_aspect(image, target_width=2048, target_height=2048):
+def resize_to_fhd_keep_aspect(image):
+    global TARGET_WIDTH, TARGET_HEIGHT
     original_width, original_height = image.size
 
     # Only resize if the original image's width and height are larger than the target dimensions
-    if original_width > target_width and original_height > target_height:
+    if original_width > TARGET_WIDTH and original_height > TARGET_HEIGHT:
         aspect_ratio = original_width / original_height
 
-        if (target_width / target_height) > aspect_ratio:
-            new_height = target_height
-            new_width = int(aspect_ratio * target_height)
+        if (TARGET_WIDTH / TARGET_HEIGHT) > aspect_ratio:
+            new_height = TARGET_HEIGHT
+            new_width = int(aspect_ratio * TARGET_HEIGHT)
         else:
-            new_width = target_width
-            new_height = int(target_width / aspect_ratio)
+            new_width = TARGET_WIDTH
+            new_height = int(TARGET_WIDTH / aspect_ratio)
 
         return image.resize((new_width, new_height), Image.LANCZOS)
     else:
