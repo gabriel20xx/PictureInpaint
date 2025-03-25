@@ -43,6 +43,23 @@ def safe_print(msg):
         print(msg.encode("ascii", "ignore").decode())
 
 
+# Function to avoid overwriting existing files by adding a suffix
+def get_unique_output_path(base_path):
+    if not os.path.exists(base_path):
+        return base_path
+
+    # Add a numerical suffix to the file if it already exists
+    name, ext = os.path.splitext(base_path)
+    counter = 1
+    new_path = f"{name}_{counter}{ext}"
+
+    while os.path.exists(new_path):
+        counter += 1
+        new_path = f"{name}_{counter}{ext}"
+
+    return new_path
+
+
 # ======== LOAD INPUT IMAGE ========
 def load_image(image_path):
     if not os.path.exists(image_path):
@@ -226,7 +243,10 @@ def inpaint_with_retry(image_path, mask_path, pipe, guidance_scale):
                 guidance_scale=guidance_scale,  # <-- Added guidance scale
             ).images[0]
 
-            result.save(INPAINTED_OUTPUT_PATH)
+            # Generate a unique output path if the file exists
+            output_path = get_unique_output_path(INPAINTED_OUTPUT_PATH)
+
+            result.save(output_path)
             safe_print(
                 f"✅ Inpainting completed. Output saved as '{INPAINTED_OUTPUT_PATH}'."
             )
