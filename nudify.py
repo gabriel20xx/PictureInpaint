@@ -1,5 +1,9 @@
 import torch
-from diffusers import FluxFillPipeline
+from diffusers import (
+    FluxFillPipeline,
+    EulerDiscreteScheduler,
+    DPMSolverMultistepScheduler,
+)
 from transformers import SegformerImageProcessor, AutoModelForSemanticSegmentation
 from PIL import Image
 import os
@@ -8,6 +12,7 @@ import cv2
 import sys
 import io
 import time
+import shutil
 
 # Use python 3.11 for this script
 
@@ -21,6 +26,12 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 INPUT_IMAGE_PATH = "example_input_images/input_image_6.jpg"
 MASK_OUTPUT_PATH = "example_output_masks/clothes_mask_alpha_6.png"
 INPAINTED_OUTPUT_PATH = "example_output_images/nudified_output_6.png"
+LOCAL_FLUX_MODEL_PATH = "models/flux/"  # Path to local model folder
+LOCAL_SAFETENSORS_FILE = (
+    "custom_models/STOIQOAfroditeFLUXXL_F1DAlpha.safetensors"  # Your local weights
+)
+GUIDANCE_SCALE = 7.5  # Default guidance scale (adjustable)
+SAMPLER_NAME = "Euler"  # Change this to the desired sampler
 MASK_GROW_PIXELS = 15  # Amount to grow (dilate) mask
 
 
@@ -130,24 +141,68 @@ def resize_to_fhd_keep_aspect(image, target_width=1920, target_height=1080):
     return image.resize((new_width, new_height), Image.LANCZOS)
 
 
-# ======== INPAINTING FUNCTION ========
-def inpaint_with_retry(image_path, mask_path, max_retries=3):
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    safe_print(f"🟢 Using device: {device}")
+# ======== LOAD FLUX INPAINTING PIPELINE ========
+def load_flux_model():
+    global LOCAL_FLUX_MODEL_PATH, LOCAL_SAFETENSORS_FILE
 
-    for attempt in range(1, max_retries + 1):
-        try:
-            safe_print(f"🟡 Loading FluxFillPipeline (Attempt {attempt})...")
-            pipe = FluxFillPipeline.from_pretrained(
-                "black-forest-labs/FLUX.1-Fill-dev"
-            ).to(device)
-            safe_print("✅ FluxFillPipeline loaded.")
-            break
-        except Exception as e:
-            safe_print(f"❌ Failed to load pipeline (Attempt {attempt}). Error: {e}")
-            if attempt == max_retries:
-                raise RuntimeError("🚨 Pipeline failed after multiple attempts.")
-            time.sleep(5)
+    # Ensure model directory exists
+    if not os.path.exists(LOCAL_FLUX_MODEL_PATH):
+        os.makedirs(LOCAL_FLUX_MODEL_PATH)
+
+    # Copy the safetensors file into the model directory if needed
+    local_model_path = os.path.join(LOCAL_FLUX_MODEL_PATH, "model.safetensors")
+    if os.path.exists(LOCAL_SAFETENSORS_FILE) and not os.path.exists(local_model_path):
+        shutil.copy(LOCAL_SAFETENSORS_FILE, local_model_path)  # Copy instead of move
+        safe_print(f"✅ Copied {LOCAL_SAFETENSORS_FILE} to {local_model_path}")
+
+    # Try loading the model with local files
+    try:
+        safe_print("🟡 Attempting to load FluxFillPipeline from local files...")
+        pipe = FluxFillPipeline.from_pretrained(
+            LOCAL_FLUX_MODEL_PATH, local_files_only=True
+        )
+        safe_print("✅ Successfully loaded FluxFillPipeline from local files.")
+    except Exception as e:
+        safe_print(
+            f"⚠️ Local model incomplete or missing files. Fetching from Hugging Face... ({e})"
+        )
+
+        # Download missing files but keep the existing local safetensors file
+        pipe = FluxFillPipeline.from_pretrained(
+            "black-forest-labs/FLUX.1-Fill-dev", cache_dir=LOCAL_FLUX_MODEL_PATH
+        )
+
+        # Save all downloaded components into the local model directory
+        pipe.save_pretrained(LOCAL_FLUX_MODEL_PATH)
+        safe_print(
+            f"✅ Model updated with missing files and saved to '{LOCAL_FLUX_MODEL_PATH}'."
+        )
+
+    # Set the sampler (scheduler)
+    pipe.scheduler = get_scheduler(SAMPLER_NAME, pipe.scheduler)
+
+    # Ensure model is on the correct device
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    pipe.to(device)
+    safe_print(f"✅ FluxFillPipeline loaded on {device}.")
+
+    return pipe
+
+
+# ======== FUNCTION TO SELECT SAMPLER ========
+def get_scheduler(scheduler_name, default_scheduler):
+    """Returns the correct sampler based on the user's choice"""
+    schedulers = {
+        "Euler": EulerDiscreteScheduler.from_config(default_scheduler.config),
+        "DPM++ 2M": DPMSolverMultistepScheduler.from_config(default_scheduler.config),
+        # Add more samplers here if needed
+    }
+    return schedulers.get(scheduler_name, default_scheduler)
+
+
+# ======== INPAINTING FUNCTION ========
+def inpaint_with_retry(image_path, mask_path, pipe, guidance_scale):
+    pipe = load_flux_model()  # Pass local path if available
 
     # Load original image & mask
     original_image = Image.open(image_path).convert("RGB")
@@ -159,20 +214,26 @@ def inpaint_with_retry(image_path, mask_path, max_retries=3):
 
     prompt = "naked body, realistic skin texture, no clothes"
 
-    for attempt in range(1, max_retries + 1):
+    retries = 0
+    while True:
         try:
-            safe_print(f"🟢 Starting inpainting (Attempt {attempt})...")
+            safe_print("🟢 Starting inpainting process...")
             result = pipe(
-                prompt=prompt, image=image, mask_image=mask, num_inference_steps=30
+                prompt=prompt,
+                image=image,
+                mask_image=mask,
+                num_inference_steps=30,
+                guidance_scale=guidance_scale,  # <-- Added guidance scale
             ).images[0]
-            result = result.resize(original_image.size)  # Ensure same size output
+
             result.save(INPAINTED_OUTPUT_PATH)
-            safe_print(f"✅ Inpainting done. Saved as '{INPAINTED_OUTPUT_PATH}'.")
-            return
+            safe_print(
+                f"✅ Inpainting completed. Output saved as '{INPAINTED_OUTPUT_PATH}'."
+            )
+            break
         except Exception as e:
-            safe_print(f"❌ Inpainting failed (Attempt {attempt}). Error: {e}")
-            if attempt == max_retries:
-                raise RuntimeError("🚨 Inpainting failed after multiple attempts.")
+            retries += 1
+            safe_print(f"❌ Inpainting failed (attempt {retries}). Error: {e}")
             time.sleep(5)
 
 
@@ -183,7 +244,12 @@ def main():
         processor, model = load_segmentation_model()
         clothes_mask = generate_clothing_mask(model, processor, image)
         save_black_inverted_alpha(clothes_mask, MASK_OUTPUT_PATH, MASK_GROW_PIXELS)
-        inpaint_with_retry(INPUT_IMAGE_PATH, MASK_OUTPUT_PATH)
+
+        # Load or download Flux model
+        pipe = load_flux_model()
+
+        # Retry inpainting process indefinitely with guidance scale
+        inpaint_with_retry(INPUT_IMAGE_PATH, MASK_OUTPUT_PATH, pipe, GUIDANCE_SCALE)
     except Exception as e:
         safe_print(f"❌ Error: {e}")
 
