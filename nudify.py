@@ -30,9 +30,12 @@ LOCAL_FLUX_MODEL_PATH = "models/flux/"  # Path to local model folder
 LOCAL_SAFETENSORS_FILE = (
     "custom_models/STOIQOAfroditeFLUXXL_F1DAlpha.safetensors"  # Your local weights
 )
+NUM_INFERENCE_STEPS = 25
 GUIDANCE_SCALE = 7.5  # Default guidance scale (adjustable)
 SAMPLER_NAME = "Euler"  # Change this to the desired sampler
 MASK_GROW_PIXELS = 15  # Amount to grow (dilate) mask
+TARGET_WIDTH = 2048
+TARGET_HEIGHT = 2048
 
 
 # ======== SAFE PRINT FUNCTION ========
@@ -144,18 +147,24 @@ def save_black_inverted_alpha(clothes_mask, output_path, mask_grow_pixels=15):
 
 
 # ======== RESIZE FUNCTION FOR INPAINTING ========
-def resize_to_fhd_keep_aspect(image, target_width=1920, target_height=1080):
+def resize_to_fhd_keep_aspect(image, target_width=2048, target_height=2048):
     original_width, original_height = image.size
-    aspect_ratio = original_width / original_height
 
-    if (target_width / target_height) > aspect_ratio:
-        new_height = target_height
-        new_width = int(aspect_ratio * target_height)
+    # Only resize if the original image's width and height are larger than the target dimensions
+    if original_width > target_width and original_height > target_height:
+        aspect_ratio = original_width / original_height
+
+        if (target_width / target_height) > aspect_ratio:
+            new_height = target_height
+            new_width = int(aspect_ratio * target_height)
+        else:
+            new_width = target_width
+            new_height = int(target_width / aspect_ratio)
+
+        return image.resize((new_width, new_height), Image.LANCZOS)
     else:
-        new_width = target_width
-        new_height = int(target_width / aspect_ratio)
-
-    return image.resize((new_width, new_height), Image.LANCZOS)
+        # If the original image is smaller, return the original image without resizing
+        return image
 
 
 # ======== LOAD FLUX INPAINTING PIPELINE ========
@@ -218,7 +227,7 @@ def get_scheduler(scheduler_name, default_scheduler):
 
 
 # ======== INPAINTING FUNCTION ========
-def inpaint_with_retry(image_path, mask_path, pipe, guidance_scale):
+def inpaint(image_path, mask_path, pipe, num_inference_steps, guidance_scale):
     pipe = load_flux_model()  # Pass local path if available
 
     # Load original image & mask
@@ -239,7 +248,7 @@ def inpaint_with_retry(image_path, mask_path, pipe, guidance_scale):
                 prompt=prompt,
                 image=image,
                 mask_image=mask,
-                num_inference_steps=30,
+                num_inference_steps=num_inference_steps,
                 guidance_scale=guidance_scale,  # <-- Added guidance scale
             ).images[0]
 
@@ -269,7 +278,13 @@ def main():
         pipe = load_flux_model()
 
         # Retry inpainting process indefinitely with guidance scale
-        inpaint_with_retry(INPUT_IMAGE_PATH, MASK_OUTPUT_PATH, pipe, GUIDANCE_SCALE)
+        inpaint(
+            INPUT_IMAGE_PATH,
+            MASK_OUTPUT_PATH,
+            pipe,
+            NUM_INFERENCE_STEPS,
+            GUIDANCE_SCALE,
+        )
     except Exception as e:
         safe_print(f"❌ Error: {e}")
 
