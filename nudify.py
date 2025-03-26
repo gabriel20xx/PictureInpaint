@@ -1,10 +1,13 @@
 import torch
 from diffusers import (
     FluxFillPipeline,
-    EulerDiscreteScheduler,
+    FlowMatchEulerDiscreteScheduler,
     DPMSolverMultistepScheduler,
 )
-from transformers import SegformerImageProcessor, AutoModelForSemanticSegmentation
+from transformers import (
+    SegformerImageProcessor,
+    AutoModelForSemanticSegmentation,
+)
 from PIL import Image
 import os
 import numpy as np
@@ -12,30 +15,31 @@ import cv2
 import sys
 import io
 import time
-import shutil
 
 # Use python 3.11 for this script
 
 # Run this once
 # pip install torch diffusers transformers pillow numpy opencv-python accelerate sentencepiece
 
-# Force UTF-8 encoding for Windows console
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
-
 # ======== CONFIGURATION ========
 INPUT_IMAGE_PATH = "example_input_images/input_image_6.jpg"
 MASK_OUTPUT_PATH = "example_output_masks/clothes_mask_alpha_6.png"
 INPAINTED_OUTPUT_PATH = "example_output_images/nudified_output_6.png"
-LOCAL_FLUX_MODEL_PATH = "models/flux/"  # Path to local model folder
-LOCAL_SAFETENSORS_FILE = (
-    "custom_models/STOIQOAfroditeFLUXXL_F1DAlpha.safetensors"  # Your local weights
-)
+LOCAL_FLUX_MODEL_PATH = "flux_diffusers_model"  # Path to local model folder
 NUM_INFERENCE_STEPS = 25
-GUIDANCE_SCALE = 7.5  # Default guidance scale (adjustable)
+GUIDANCE_SCALE = 3.5  # Default guidance scale (adjustable)
 SAMPLER_NAME = "Euler"  # Change this to the desired sampler
 MASK_GROW_PIXELS = 15  # Amount to grow (dilate) mask
 TARGET_WIDTH = 2048
 TARGET_HEIGHT = 2048
+
+# Force UTF-8 encoding for Windows console
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
+
+# Global variable to store the pipeline instance
+pipe = None
+
+torch.set_grad_enabled(False)  # ✅ Disable gradients globally
 
 
 # ======== SAFE PRINT FUNCTION ========
@@ -168,68 +172,63 @@ def resize_to_fhd_keep_aspect(image):
         return image
 
 
-# ======== LOAD FLUX INPAINTING PIPELINE ========
-def load_flux_model():
-    global LOCAL_FLUX_MODEL_PATH, LOCAL_SAFETENSORS_FILE
+# ======== FUNCTION TO SELECT SAMPLER ========
+def get_scheduler(scheduler_name, default_scheduler):
+    """Returns the correct sampler based on the user's choice"""
 
-    # Ensure model directory exists
-    if not os.path.exists(LOCAL_FLUX_MODEL_PATH):
-        os.makedirs(LOCAL_FLUX_MODEL_PATH)
+    schedulers = {
+        "Euler": FlowMatchEulerDiscreteScheduler.from_config(default_scheduler.config),
+        "DPM++ 2M": DPMSolverMultistepScheduler.from_config(default_scheduler.config),
+        # Add more samplers here if needed
+    }
 
-    # Copy the safetensors file into the model directory if needed
-    local_model_path = os.path.join(LOCAL_FLUX_MODEL_PATH, "model.safetensors")
-    if os.path.exists(LOCAL_SAFETENSORS_FILE) and not os.path.exists(local_model_path):
-        shutil.copy(LOCAL_SAFETENSORS_FILE, local_model_path)  # Copy instead of move
-        safe_print(f"✅ Copied {LOCAL_SAFETENSORS_FILE} to {local_model_path}")
+    new_scheduler = schedulers.get(scheduler_name, default_scheduler)
 
-    # Try loading the model with local files
-    try:
-        safe_print("🟡 Attempting to load FluxFillPipeline from local files...")
-        pipe = FluxFillPipeline.from_pretrained(
-            LOCAL_FLUX_MODEL_PATH, local_files_only=True
-        )
-        safe_print("✅ Successfully loaded FluxFillPipeline from local files.")
-    except Exception as e:
-        safe_print(
-            f"⚠️ Local model incomplete or missing files. Fetching from Hugging Face... ({e})"
-        )
+    # Ensure backward compatibility with older versions
+    if hasattr(new_scheduler, "set_timesteps"):
+        scheduler_params = new_scheduler.set_timesteps.__code__.co_varnames
+        if "mu" not in scheduler_params:
+            new_scheduler.set_timesteps = (
+                lambda *args, **kwargs: default_scheduler.set_timesteps(
+                    *args, **{k: v for k, v in kwargs.items() if k != "mu"}
+                )
+            )
 
-        # Download missing files but keep the existing local safetensors file
-        pipe = FluxFillPipeline.from_pretrained(
-            "black-forest-labs/FLUX.1-Fill-dev", cache_dir=LOCAL_FLUX_MODEL_PATH
-        )
+    return new_scheduler
 
-        # Save all downloaded components into the local model directory
-        pipe.save_pretrained(LOCAL_FLUX_MODEL_PATH)
-        safe_print(
-            f"✅ Model updated with missing files and saved to '{LOCAL_FLUX_MODEL_PATH}'."
-        )
+
+# ======== INPAINTING FUNCTION ========
+def inpaint(
+    image_path, mask_path, model_path, sampler_name, num_inference_steps, guidance_scale
+):
+    # Load the converted Flux model
+    print("Loading converted Flux model...")
+
+    # Check for available device (GPU if possible)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    torch_dtype = torch.float16 if device.type == "cuda" else torch.float32
+
+    # Load the model with correct dtype based on the available device
+    pipe = FluxFillPipeline.from_pretrained(model_path, torch_dtype=torch_dtype)
 
     # Set the sampler (scheduler)
-    pipe.scheduler = get_scheduler(SAMPLER_NAME, pipe.scheduler)
+    safe_print(f"🟡 Setting scheduler {sampler_name}...")
+    pipe.scheduler = get_scheduler(sampler_name, pipe.scheduler)
+    safe_print(pipe.scheduler.config)
+    safe_print("✅ Scheduler set")
+
+    # Enable Karras sigmas
+    # pipe.scheduler.config["use_karras_sigmas"] = True
+    # pipe.scheduler.config["use_exponential_sigmas"] = True
+    pipe.scheduler.config["use_beta_sigmas"] = True
+
+    # Optionally, also adjust other parameters if needed
+    # pipe.scheduler.config["invert_sigmas"] = False  # Leave as False or adjust as needed
 
     # Ensure model is on the correct device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     pipe.to(device)
     safe_print(f"✅ FluxFillPipeline loaded on {device}.")
-
-    return pipe
-
-
-# ======== FUNCTION TO SELECT SAMPLER ========
-def get_scheduler(scheduler_name, default_scheduler):
-    """Returns the correct sampler based on the user's choice"""
-    schedulers = {
-        "Euler": EulerDiscreteScheduler.from_config(default_scheduler.config),
-        "DPM++ 2M": DPMSolverMultistepScheduler.from_config(default_scheduler.config),
-        # Add more samplers here if needed
-    }
-    return schedulers.get(scheduler_name, default_scheduler)
-
-
-# ======== INPAINTING FUNCTION ========
-def inpaint(image_path, mask_path, pipe, num_inference_steps, guidance_scale):
-    pipe = load_flux_model()  # Pass local path if available
 
     # Load original image & mask
     original_image = Image.open(image_path).convert("RGB")
@@ -245,13 +244,17 @@ def inpaint(image_path, mask_path, pipe, num_inference_steps, guidance_scale):
     while True:
         try:
             safe_print("🟢 Starting inpainting process...")
-            result = pipe(
-                prompt=prompt,
-                image=image,
-                mask_image=mask,
-                num_inference_steps=num_inference_steps,
-                guidance_scale=guidance_scale,  # <-- Added guidance scale
-            ).images[0]
+            # Ensure gradients are disabled during inference
+            with torch.inference_mode():  # ✅ Wrap inpainting execution in inference mode
+                # Alternatively, you can also use `set_grad_enabled(False)` inside the inference block
+                with torch.no_grad():  # Additional safety check to make sure gradients are not tracked
+                    result = pipe(
+                        prompt=prompt,
+                        image=image,
+                        mask_image=mask,
+                        num_inference_steps=num_inference_steps,
+                        guidance_scale=guidance_scale,  # <-- Added guidance scale
+                    ).images[0]
 
             # Generate a unique output path if the file exists
             output_path = get_unique_output_path(INPAINTED_OUTPUT_PATH)
@@ -275,14 +278,12 @@ def main():
         clothes_mask = generate_clothing_mask(model, processor, image)
         save_black_inverted_alpha(clothes_mask, MASK_OUTPUT_PATH, MASK_GROW_PIXELS)
 
-        # Load or download Flux model
-        pipe = load_flux_model()
-
         # Retry inpainting process indefinitely with guidance scale
         inpaint(
             INPUT_IMAGE_PATH,
             MASK_OUTPUT_PATH,
-            pipe,
+            LOCAL_FLUX_MODEL_PATH,
+            SAMPLER_NAME,
             NUM_INFERENCE_STEPS,
             GUIDANCE_SCALE,
         )

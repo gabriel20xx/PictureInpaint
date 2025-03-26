@@ -1,3 +1,4 @@
 .qodo
 models/*
 custom_models/*
+flux_diffusers_model/*
