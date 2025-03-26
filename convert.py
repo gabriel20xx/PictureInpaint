@@ -32,7 +32,7 @@ python scripts/convert_flux_to_diffusers.py  \
 
 # Configuration variables
 original_state_dict_repo_id = "black-forest-labs/FLUX.1-schnell"
-filename = "custom_models/STOIQOAfroditeFLUXXL_F1DAlpha.safetensors"
+filename = "models/STOIQOAfroditeFLUXXL_F1DAlpha.safetensors"
 checkpoint_path = None  # Set this if you want to use a local checkpoint path
 in_channels = 64
 out_channels = None

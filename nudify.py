@@ -25,9 +25,9 @@ import time
 INPUT_IMAGE_PATH = "example_input_images/input_image_6.jpg"
 MASK_OUTPUT_PATH = "example_output_masks/clothes_mask_alpha_6.png"
 INPAINTED_OUTPUT_PATH = "example_output_images/nudified_output_6.png"
-LOCAL_FLUX_MODEL_PATH = "flux_diffusers_model"  # Path to local model folder
+LOCAL_FLUX_MODEL_PATH = "converted_model"  # Path to local model folder
 NUM_INFERENCE_STEPS = 25
-GUIDANCE_SCALE = 3.5  # Default guidance scale (adjustable)
+GUIDANCE_SCALE = 7.5  # Default guidance scale (adjustable)
 SAMPLER_NAME = "Euler"  # Change this to the desired sampler
 MASK_GROW_PIXELS = 15  # Amount to grow (dilate) mask
 TARGET_WIDTH = 2048
@@ -35,11 +35,6 @@ TARGET_HEIGHT = 2048
 
 # Force UTF-8 encoding for Windows console
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
-
-# Global variable to store the pipeline instance
-pipe = None
-
-torch.set_grad_enabled(False)  # ✅ Disable gradients globally
 
 
 # ======== SAFE PRINT FUNCTION ========
@@ -101,8 +96,7 @@ def generate_clothing_mask(model, processor, image):
     device = torch.device("cpu")  # Force CPU inference
     inputs = processor(images=image, return_tensors="pt").to(device)
 
-    with torch.no_grad():
-        outputs = model(**inputs)
+    outputs = model(**inputs)
     logits = outputs.logits
     segmentation = torch.argmax(logits, dim=1).squeeze().cpu().numpy()
 
@@ -151,20 +145,19 @@ def save_black_inverted_alpha(clothes_mask, output_path, mask_grow_pixels=15):
 
 
 # ======== RESIZE FUNCTION FOR INPAINTING ========
-def resize_to_fhd_keep_aspect(image):
-    global TARGET_WIDTH, TARGET_HEIGHT
+def resize_to_fhd_keep_aspect(image, target_width, target_height):
     original_width, original_height = image.size
 
     # Only resize if the original image's width and height are larger than the target dimensions
-    if original_width > TARGET_WIDTH and original_height > TARGET_HEIGHT:
+    if original_width > target_width and original_height > target_height:
         aspect_ratio = original_width / original_height
 
-        if (TARGET_WIDTH / TARGET_HEIGHT) > aspect_ratio:
-            new_height = TARGET_HEIGHT
-            new_width = int(aspect_ratio * TARGET_HEIGHT)
+        if (target_width / target_height) > aspect_ratio:
+            new_height = target_height
+            new_width = int(aspect_ratio * target_height)
         else:
-            new_width = TARGET_WIDTH
-            new_height = int(TARGET_WIDTH / aspect_ratio)
+            new_width = target_width
+            new_height = int(target_width / aspect_ratio)
 
         return image.resize((new_width, new_height), Image.LANCZOS)
     else:
@@ -199,10 +192,18 @@ def get_scheduler(scheduler_name, default_scheduler):
 
 # ======== INPAINTING FUNCTION ========
 def inpaint(
-    image_path, mask_path, model_path, sampler_name, num_inference_steps, guidance_scale
+    image_path,
+    mask_path,
+    model_path,
+    sampler_name,
+    num_inference_steps,
+    guidance_scale,
+    target_width,
+    target_height,
+    inpainted_output_path,
 ):
     # Load the converted Flux model
-    print("Loading converted Flux model...")
+    safe_print("Loading converted Flux model...")
 
     # Check for available device (GPU if possible)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -214,7 +215,6 @@ def inpaint(
     # Set the sampler (scheduler)
     safe_print(f"🟡 Setting scheduler {sampler_name}...")
     pipe.scheduler = get_scheduler(sampler_name, pipe.scheduler)
-    safe_print(pipe.scheduler.config)
     safe_print("✅ Scheduler set")
 
     # Enable Karras sigmas
@@ -227,7 +227,9 @@ def inpaint(
 
     # Ensure model is on the correct device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    safe_print(f"Config: {pipe.scheduler.config}")
     pipe.to(device)
+
     safe_print(f"✅ FluxFillPipeline loaded on {device}.")
 
     # Load original image & mask
@@ -235,39 +237,32 @@ def inpaint(
     original_mask = Image.open(mask_path).convert("L")
 
     # Resize both to FHD keeping aspect ratio
-    image = resize_to_fhd_keep_aspect(original_image)
-    mask = resize_to_fhd_keep_aspect(original_mask)
+    image = resize_to_fhd_keep_aspect(original_image, target_width, target_height)
+    mask = resize_to_fhd_keep_aspect(original_mask, target_width, target_height)
 
-    prompt = "naked body, realistic skin texture, no clothes"
+    prompt = "naked body, realistic skin texture, no clothes, nude, no bra, no top, no panties, no pants, no shorts"
 
-    retries = 0
-    while True:
-        try:
-            safe_print("🟢 Starting inpainting process...")
-            # Ensure gradients are disabled during inference
-            with torch.inference_mode():  # ✅ Wrap inpainting execution in inference mode
-                # Alternatively, you can also use `set_grad_enabled(False)` inside the inference block
-                with torch.no_grad():  # Additional safety check to make sure gradients are not tracked
-                    result = pipe(
-                        prompt=prompt,
-                        image=image,
-                        mask_image=mask,
-                        num_inference_steps=num_inference_steps,
-                        guidance_scale=guidance_scale,  # <-- Added guidance scale
-                    ).images[0]
+    try:
+        safe_print("🟢 Starting inpainting process...")
+        result = pipe(
+            prompt=prompt,
+            image=image,
+            mask_image=mask,
+            num_inference_steps=num_inference_steps,
+            guidance_scale=guidance_scale,
+        ).images[0]
 
-            # Generate a unique output path if the file exists
-            output_path = get_unique_output_path(INPAINTED_OUTPUT_PATH)
+        # Generate a unique output path if the file exists
+        output_path = get_unique_output_path(inpainted_output_path)
 
-            result.save(output_path)
-            safe_print(
-                f"✅ Inpainting completed. Output saved as '{INPAINTED_OUTPUT_PATH}'."
-            )
-            break
-        except Exception as e:
-            retries += 1
-            safe_print(f"❌ Inpainting failed (attempt {retries}). Error: {e}")
-            time.sleep(5)
+        # Ensure same size output
+        result = result.resize(image.size)
+
+        result.save(output_path)
+        safe_print(f"✅ Inpainting completed. Output saved as '{output_path}'.")
+    except Exception as e:
+        safe_print(f"❌ Inpainting failed. Error: {e}")
+        time.sleep(5)
 
 
 # ======== MAIN FUNCTION ========
@@ -286,6 +281,9 @@ def main():
             SAMPLER_NAME,
             NUM_INFERENCE_STEPS,
             GUIDANCE_SCALE,
+            TARGET_WIDTH,
+            TARGET_HEIGHT,
+            INPAINTED_OUTPUT_PATH,
         )
     except Exception as e:
         safe_print(f"❌ Error: {e}")
