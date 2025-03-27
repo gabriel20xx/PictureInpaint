@@ -275,6 +275,7 @@ def load_pipeline(model, device, cache_dir, low_ram_mode):
         pipe.vae.enable_tiling()
         pipe.enable_vae_slicing()
         pipe.enable_attention_slicing()
+        pipe.enable_model_cpu_offload()
 
     if device == "cuda":
         pipe.enable_xformers_memory_efficient_attention()  # ✅ Requires `pip install xformers`
