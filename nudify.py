@@ -12,6 +12,7 @@ from PIL import Image
 import os
 import numpy as np
 import cv2
+import gc
 import sys
 import io
 import time
@@ -20,7 +21,7 @@ import time
 
 # Run these once
 # pip install torch --index-url https://download.pytorch.org/whl/cu118
-# pip install diffusers transformers pillow numpy opencv-python accelerate sentencepiece peft
+# pip install diffusers transformers pillow numpy opencv-python accelerate sentencepiece peft xformers gc
 
 # ======== CONFIGURATION ========
 INPUT_IMAGE_PATH = "example_input_images/input_image_6.jpg"
@@ -220,10 +221,10 @@ def inpaint(
 
     # Load the model with correct dtype based on the available device
     if use_local_model:
-        pipe = FluxFillPipeline.from_pretrained(model_path, torch_dtype=torch_dtype)
+        pipe = FluxFillPipeline.from_pretrained(model_path, torch_dtype=torch_dtype, low_cpu_mem_usage=True)
         safe_print(f"✅ Checkpoint {model_path} applied")
     else:
-        pipe = FluxFillPipeline.from_pretrained(remote_model, torch_dtype=torch_dtype)
+        pipe = FluxFillPipeline.from_pretrained(remote_model, torch_dtype=torch_dtype, low_cpu_mem_usage=True)
         safe_print(f"✅ Checkpoint {remote_model} applied.")
 
     if use_lora:
@@ -243,9 +244,22 @@ def inpaint(
     # Optionally, also adjust other parameters if needed
     # pipe.scheduler.config["invert_sigmas"] = False  # Leave as False or adjust as needed
 
-    # Ensure model is on the correct device
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     safe_print(f"Config: {pipe.scheduler.config}")
+
+    # Enable memory optimizations
+    pipe.enable_attention_slicing()
+    pipe.enable_xformers_memory_efficient_attention()
+
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()  # Free GPU memory
+    gc.collect()  # Free CPU memory
+
+    # Force CPU if needed
+    if device.type == "cuda" and torch.cuda.get_device_properties(0).total_memory < 6 * 1024 * 1024 * 1024:
+        safe_print("⚠️ Low VRAM detected, switching to CPU mode.")
+        pipe.to("cpu")
+
+    # Ensure model is on the correct device
     pipe.to(device)
 
     safe_print(f"✅ FluxFillPipeline loaded on {device}.")
