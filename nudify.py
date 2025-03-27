@@ -18,8 +18,9 @@ import time
 
 # Use python 3.11 for this script
 
-# Run this once
-# pip install torch diffusers transformers pillow numpy opencv-python accelerate sentencepiece peft
+# Run these once
+# pip install torch --index-url https://download.pytorch.org/whl/cu118
+# pip install diffusers transformers pillow numpy opencv-python accelerate sentencepiece peft
 
 # ======== CONFIGURATION ========
 INPUT_IMAGE_PATH = "example_input_images/input_image_6.jpg"
