@@ -237,7 +237,7 @@ def get_device():
 def load_pipeline(model, device, cache_dir):
     # Force minimal RAM/VRAM usage
     gc.collect()  # Free CPU memory
-    if torch.cuda.is_available():
+    if device == "cuda":
         torch.cuda.empty_cache()  # Free GPU memory
 
     torch_dtype = torch.float16 if device == "cuda" else torch.float32
@@ -267,8 +267,6 @@ def load_pipeline(model, device, cache_dir):
         )
         print("✅ Model downloaded and saved to cache.")
 
-    safe_print("Pipeline loaded.")
-
     # Additional optimizations
     pipe.vae.enable_slicing()
     pipe.vae.enable_tiling()
@@ -278,9 +276,6 @@ def load_pipeline(model, device, cache_dir):
 
     if device == "cuda":
         pipe.enable_xformers_memory_efficient_attention()  # ✅ Requires `pip install xformers`
-        pipe.enable_model_cpu_offload()  # ✅ Auto-offload to CPU when needed
-    else:
-        pipe.enable_sequential_cpu_offload()
 
     pipe.to(device)
     safe_print(f"✅ FluxFillPipeline loaded on {device}.")
