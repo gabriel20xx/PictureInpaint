@@ -9,6 +9,7 @@ from transformers import (
     SegformerImageProcessor,
     AutoModelForSemanticSegmentation,
     AutoTokenizer,
+    BitsAndBytesConfig,
 )
 from PIL import Image
 import os
@@ -242,8 +243,7 @@ def load_pipeline(model, device, cache_dir):
     if torch.cuda.is_available():
         torch.cuda.empty_cache()  # Free GPU memory
 
-    # Load the tokenizer separately to reduce memory spike
-    # tokenizer = AutoTokenizer.from_pretrained(model, use_fast=True)
+    bnb_config = BitsAndBytesConfig(load_in_4bit=True)  # ✅ Even lower RAM usage
 
     torch_dtype = torch.float16 if device == "cuda" else torch.float32
 
@@ -256,9 +256,10 @@ def load_pipeline(model, device, cache_dir):
             cache_dir=cache_dir,
             low_cpu_mem_usage=True,  # Reduce memory footprint
             local_files_only=True,
-            # use_safetensors=True,  # Avoid loading unnecessary weights
-            # offload_folder="./offload_cache",  # ✅ Offload parts of the model to disk
-            # tokenizer=tokenizer,  # Load tokenizer separately
+            use_safetensors=True,  # Avoid loading unnecessary weights
+            offload_folder="./offload_cache",  # ✅ Offload parts of the model to disk
+            device_map="auto",
+            quantization_config=bnb_config,  # ✅ Reduce RAM further
         )
         print("✅ Model loaded from local cache.")
     except OSError:
@@ -273,7 +274,6 @@ def load_pipeline(model, device, cache_dir):
         print("✅ Model downloaded and saved to cache.")
 
     safe_print("Pipeline loaded.")
-    pipe.enable_sequential_cpu_offload()
     print("1")
     pipe.vae.enable_slicing()
     print("2")
