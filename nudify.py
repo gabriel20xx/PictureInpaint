@@ -269,6 +269,7 @@ def load_pipeline(model, device, cache_dir, low_ram_mode, low_vram_mode):
             low_cpu_mem_usage=low_ram_mode,  # Reduce memory footprint
         )
         print("✅ Model downloaded and saved to cache.")
+    pipe.to(device)
 
     if low_ram_mode:
         # Additional optimizations
@@ -281,7 +282,6 @@ def load_pipeline(model, device, cache_dir, low_ram_mode, low_vram_mode):
     if device == "cuda" and low_vram_mode:
         pipe.enable_xformers_memory_efficient_attention()  # ✅ Requires `pip install xformers`
 
-    pipe.to(device)
     safe_print(f"✅ FluxFillPipeline loaded on {device}.")
     return pipe
 
