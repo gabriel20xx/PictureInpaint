@@ -7,6 +7,7 @@ from diffusers import (
 from transformers import (
     SegformerImageProcessor,
     AutoModelForSemanticSegmentation,
+    AutoTokenizer,
 )
 from PIL import Image
 import os
@@ -212,20 +213,44 @@ def inpaint(
     use_lora,
     remote_lora,
 ):
+    if use_local_model:
+        model = model_path
+    else:
+        model = remote_model
+
     # Load the Flux model
     safe_print("Loading Flux model...")
 
-    # Check for available device (GPU if possible)
+    # Select the device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    torch_dtype = torch.float16 if device.type == "cuda" else torch.float32
 
-    # Load the model with correct dtype based on the available device
-    if use_local_model:
-        pipe = FluxFillPipeline.from_pretrained(model_path, torch_dtype=torch_dtype, low_cpu_mem_usage=True)
-        safe_print(f"✅ Checkpoint {model_path} applied")
-    else:
-        pipe = FluxFillPipeline.from_pretrained(remote_model, torch_dtype=torch_dtype, low_cpu_mem_usage=True)
-        safe_print(f"✅ Checkpoint {remote_model} applied.")
+    # Force minimal RAM/VRAM usage
+    gc.collect()  # Free CPU memory
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()  # Free GPU memory
+
+    # Load the tokenizer separately to reduce memory spike
+    tokenizer = AutoTokenizer.from_pretrained(model, use_fast=True)
+
+    # Load the model with extreme memory optimization
+    pipe = FluxFillPipeline.from_pretrained(
+        model,
+        torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+        low_cpu_mem_usage=True,  # Reduce memory footprint
+        use_safetensors=True,  # Avoid loading unnecessary weights
+        offload_folder="./offload_cache",  # ✅ Offload parts of the model to disk
+        tokenizer=tokenizer,  # Load tokenizer separately
+    ).to(device)
+
+    # Additional optimizations
+    pipe.enable_attention_slicing()
+    pipe.enable_xformers_memory_efficient_attention()  # ✅ Requires `pip install xformers`
+    pipe.enable_model_cpu_offload()  # ✅ Auto-offload to CPU when needed
+
+    # Free memory after loading
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
     if use_lora:
         pipe.load_lora_weights(remote_lora)
@@ -249,6 +274,7 @@ def inpaint(
     # Enable memory optimizations
     pipe.enable_attention_slicing()
     pipe.enable_xformers_memory_efficient_attention()
+    pipe.enable_model_cpu_offload()  # ✅ Moves model parts to CPU when needed
 
     if torch.cuda.is_available():
         torch.cuda.empty_cache()  # Free GPU memory
