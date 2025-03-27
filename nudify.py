@@ -230,7 +230,7 @@ def apply_scheduler(
 
     # Optionally, also adjust other parameters if needed
     if invert_sigmas:
-        pipe.scheduler.config["invert_sigmas"] = False  # Leave as False or adjust as needed
+        pipe.scheduler.config["invert_sigmas"] = True  # Leave as False or adjust as needed
 
     safe_print(f"Config: {pipe.scheduler.config}")
     return pipe
@@ -286,7 +286,11 @@ def load_pipeline(model, device, cache_dir, low_ram_mode, low_vram_mode):
         )
         print("✅ Model downloaded and saved to cache.")
     pipe.reset_device_map()
-    pipe.to(device)
+    if device == "cuda" and low_vram_mode:
+        pipe.to("cuda", torch_dtype=torch.float16)  # Use fp16 precision
+        pipe.enable_sequential_cpu_offload()  # Move unused layers to CPU
+    elif device == "cuda" or device == "cpu":
+        pipe.to(device)
 
     if low_ram_mode:
         # Additional optimizations
