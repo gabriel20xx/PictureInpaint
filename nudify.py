@@ -274,8 +274,9 @@ def load_pipeline(model, device, cache_dir):
     pipe.vae.enable_tiling()
     pipe.enable_vae_slicing()
     pipe.enable_attention_slicing()
-    
+
     if device == "cuda":
+        pipe.reset_device_map()
         pipe.enable_xformers_memory_efficient_attention()  # ✅ Requires `pip install xformers`
         pipe.enable_sequential_cpu_offload()
         pipe.enable_model_cpu_offload()  # ✅ Auto-offload to CPU when needed
