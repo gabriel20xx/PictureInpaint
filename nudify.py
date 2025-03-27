@@ -33,6 +33,10 @@ REMOTE_FLUX_MODEL = "black-forest-labs/FLUX.1-Fill-dev"
 CACHE_DIR = "./.cache"
 USE_LORA = True
 REMOTE_LORA = "xey/sldr_flux_nsfw_v2-studio"
+INVERT_SIGMAS = False
+USE_KARRAS_SIGMAS = False
+USE_EXPONENTIAL_SIGMAS = False
+USE_BETA_SIGMAS = True
 PROMPT = "naked body, realistic skin texture, no clothes, nude, no bra, no top, no panties, no pants, no shorts. \
     Remove the cloth from the image."
 NUM_INFERENCE_STEPS = 25
@@ -203,19 +207,30 @@ def apply_lora(pipe, remote_lora):
     return pipe
 
 
-def apply_scheduler(pipe, sampler_name):
+def apply_scheduler(
+    pipe,
+    sampler_name,
+    invert_sigmas,
+    use_karras_sigmas,
+    use_exponential_sigmas,
+    use_beta_sigmas,
+):
     # Set the sampler (scheduler)
     safe_print(f"🟡 Setting scheduler {sampler_name}...")
     pipe.scheduler = get_scheduler(sampler_name, pipe.scheduler)
     safe_print("✅ Scheduler set")
 
     # Enable Karras sigmas
-    # pipe.scheduler.config["use_karras_sigmas"] = True
-    # pipe.scheduler.config["use_exponential_sigmas"] = True
-    pipe.scheduler.config["use_beta_sigmas"] = True
+    if use_karras_sigmas:
+        pipe.scheduler.config["use_karras_sigmas"] = True
+    if use_exponential_sigmas:
+        pipe.scheduler.config["use_exponential_sigmas"] = True
+    if use_beta_sigmas:
+        pipe.scheduler.config["use_beta_sigmas"] = True
 
     # Optionally, also adjust other parameters if needed
-    # pipe.scheduler.config["invert_sigmas"] = False  # Leave as False or adjust as needed
+    if invert_sigmas:
+        pipe.scheduler.config["invert_sigmas"] = False  # Leave as False or adjust as needed
 
     safe_print(f"Config: {pipe.scheduler.config}")
     return pipe
@@ -349,7 +364,14 @@ def main():
         if USE_LORA:
             pipe = apply_lora(pipe, REMOTE_LORA)
 
-        pipe = apply_scheduler(pipe, SAMPLER_NAME)
+        pipe = apply_scheduler(
+            pipe,
+            SAMPLER_NAME,
+            INVERT_SIGMAS,
+            USE_KARRAS_SIGMAS,
+            USE_EXPONENTIAL_SIGMAS,
+            USE_BETA_SIGMAS,
+        )
 
         # Retry inpainting process indefinitely with guidance scale
         result = inpaint(
