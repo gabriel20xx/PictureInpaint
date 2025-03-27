@@ -269,12 +269,12 @@ def load_pipeline(model, device, cache_dir, low_ram_mode):
         )
         print("✅ Model downloaded and saved to cache.")
 
-    # Additional optimizations
-    pipe.vae.enable_slicing()
-    pipe.vae.enable_tiling()
-    pipe.enable_vae_slicing()
-    pipe.enable_attention_slicing()
-    pipe.reset_device_map()
+    if low_ram_mode:
+        # Additional optimizations
+        pipe.vae.enable_slicing()
+        pipe.vae.enable_tiling()
+        pipe.enable_vae_slicing()
+        pipe.enable_attention_slicing()
 
     if device == "cuda":
         pipe.enable_xformers_memory_efficient_attention()  # ✅ Requires `pip install xformers`
