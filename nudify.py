@@ -1,15 +1,13 @@
 import torch
 from diffusers import (
     FluxFillPipeline,
-    DiffusionPipeline,
     FlowMatchEulerDiscreteScheduler,
     DPMSolverMultistepScheduler,
 )
+from diffusers.models.attention_processor import AttnProcessor2_0
 from transformers import (
     SegformerImageProcessor,
     AutoModelForSemanticSegmentation,
-    AutoTokenizer,
-    BitsAndBytesConfig,
 )
 from PIL import Image
 import os
@@ -23,7 +21,7 @@ import io
 
 # Run these once
 # pip install torch --index-url https://download.pytorch.org/whl/cu118
-# pip install diffusers transformers pillow numpy opencv-python accelerate sentencepiece peft xformers gc
+# pip install diffusers transformers pillow numpy opencv-python accelerate sentencepiece peft xformers gc bitdandbytes
 
 # ======== CONFIGURATION ========
 INPUT_IMAGE_PATH = "example_input_images/input_image_6.jpg"
@@ -243,8 +241,6 @@ def load_pipeline(model, device, cache_dir):
     if torch.cuda.is_available():
         torch.cuda.empty_cache()  # Free GPU memory
 
-    bnb_config = BitsAndBytesConfig(load_in_4bit=True)  # ✅ Even lower RAM usage
-
     torch_dtype = torch.float16 if device == "cuda" else torch.float32
 
     # Load the Flux model
@@ -258,8 +254,7 @@ def load_pipeline(model, device, cache_dir):
             local_files_only=True,
             use_safetensors=True,  # Avoid loading unnecessary weights
             offload_folder="./offload_cache",  # ✅ Offload parts of the model to disk
-            device_map="auto",
-            quantization_config=bnb_config,  # ✅ Reduce RAM further
+            device_map="balanced",
         )
         print("✅ Model loaded from local cache.")
     except OSError:
@@ -274,22 +269,19 @@ def load_pipeline(model, device, cache_dir):
         print("✅ Model downloaded and saved to cache.")
 
     safe_print("Pipeline loaded.")
-    print("1")
-    pipe.vae.enable_slicing()
-    print("2")
-    pipe.vae.enable_tiling()
-    print("3")
-    pipe.to(device)
-    print("4")
 
     # Additional optimizations
+    pipe.vae.enable_slicing()
+    pipe.vae.enable_tiling()
+    pipe.enable_vae_slicing()
     pipe.enable_attention_slicing()
-    print("5")
-    pipe.enable_xformers_memory_efficient_attention()  # ✅ Requires `pip install xformers`
-    print("6")
     pipe.enable_model_cpu_offload()  # ✅ Auto-offload to CPU when needed
-    print("7")
 
+    if device == "cuda":
+        pipe.enable_xformers_memory_efficient_attention()  # ✅ Requires `pip install xformers`
+        pipe.enable_sequential_cpu_offload()
+
+    pipe.to(device)
     return pipe
 
 
