@@ -237,9 +237,6 @@ def get_device():
 
 
 def load_pipeline(model, device, cache_dir):
-    # Load the Flux model
-    safe_print(f"🟡 Loading Flux model {model}...")
-
     # Force minimal RAM/VRAM usage
     gc.collect()  # Free CPU memory
     if torch.cuda.is_available():
@@ -250,24 +247,48 @@ def load_pipeline(model, device, cache_dir):
 
     torch_dtype = torch.float16 if device == "cuda" else torch.float32
 
-    pipe = FluxFillPipeline.from_pretrained(
-        model,
-        torch_dtype=torch_dtype,
-        cache_dir=cache_dir,
-        low_cpu_mem_usage=True,  # Reduce memory footprint
-        # use_safetensors=True,  # Avoid loading unnecessary weights
-        # offload_folder="./offload_cache",  # ✅ Offload parts of the model to disk
-        # tokenizer=tokenizer,  # Load tokenizer separately
-    )
+    # Load the Flux model
+    safe_print(f"🟡 Loading Flux model {model}...")
+    try:
+        pipe = FluxFillPipeline.from_pretrained(
+            model,
+            torch_dtype=torch_dtype,
+            cache_dir=cache_dir,
+            low_cpu_mem_usage=True,  # Reduce memory footprint
+            local_files_only=True,
+            # use_safetensors=True,  # Avoid loading unnecessary weights
+            # offload_folder="./offload_cache",  # ✅ Offload parts of the model to disk
+            # tokenizer=tokenizer,  # Load tokenizer separately
+        )
+        print("✅ Model loaded from local cache.")
+    except OSError:
+        print("⚠️ Model not found locally. Downloading from Hugging Face...")
+        # Download the model if not found locally
+        pipe = FluxFillPipeline.from_pretrained(
+            model,
+            cache_dir=cache_dir,
+            torch_dtype=torch_dtype,
+            low_cpu_mem_usage=True,  # Reduce memory footprint
+        )
+        print("✅ Model downloaded and saved to cache.")
+
+    safe_print("Pipeline loaded.")
     pipe.enable_sequential_cpu_offload()
+    print("1")
     pipe.vae.enable_slicing()
+    print("2")
     pipe.vae.enable_tiling()
+    print("3")
     pipe.to(device)
+    print("4")
 
     # Additional optimizations
     pipe.enable_attention_slicing()
+    print("5")
     pipe.enable_xformers_memory_efficient_attention()  # ✅ Requires `pip install xformers`
+    print("6")
     pipe.enable_model_cpu_offload()  # ✅ Auto-offload to CPU when needed
+    print("7")
 
     return pipe
 
