@@ -32,7 +32,7 @@ USE_LOCAL_MODEL = True
 LOCAL_FLUX_MODEL_PATH = "models/converted_model"  # Path to local model folder
 REMOTE_FLUX_MODEL = "black-forest-labs/FLUX.1-dev"
 USE_LORA = True
-REMOTE_LORA = "CultriX/flux-nsfw-highress"
+REMOTE_LORA = "xey/sldr_flux_nsfw_v2-studio"
 PROMPT = "naked body, realistic skin texture, no clothes, nude, no bra, no top, no panties, no pants, no shorts"
 NUM_INFERENCE_STEPS = 25
 GUIDANCE_SCALE = 7.5  # Default guidance scale (adjustable)
@@ -247,17 +247,16 @@ def load_pipeline(model, device):
 
     torch_dtype = torch.float16 if device.type == "cuda" else torch.float32
 
-    pipe = None
+    pipe = FluxFillPipeline.from_pretrained(
+        model,
+        torch_dtype=torch_dtype,
+    )
 
     # Additional optimizations
     pipe.enable_attention_slicing()
     pipe.enable_xformers_memory_efficient_attention()  # ✅ Requires `pip install xformers`
     pipe.enable_model_cpu_offload()  # ✅ Auto-offload to CPU when needed
 
-    pipe = FluxFillPipeline.from_pretrained(
-        model,
-        torch_dtype=torch_dtype,
-    )
 
     return pipe
 
