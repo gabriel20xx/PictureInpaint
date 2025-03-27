@@ -1,4 +1,5 @@
 import torch
+from torch import autocast
 from diffusers import (
     FluxFillPipeline,
     FlowMatchEulerDiscreteScheduler,
@@ -301,15 +302,16 @@ def inpaint(
 
     try:
         safe_print("🟢 Starting inpainting process...")
-        result = pipe(
-            prompt=prompt,
-            image=image,
-            mask_image=mask,
-            height=height,
-            width=width,
-            num_inference_steps=num_inference_steps,
-            guidance_scale=guidance_scale,
-        ).images[0]
+        with autocast(device):
+            result = pipe(
+                prompt=prompt,
+                image=image,
+                mask_image=mask,
+                height=height,
+                width=width,
+                num_inference_steps=num_inference_steps,
+                guidance_scale=guidance_scale,
+            ).images[0]
 
         return result
     except Exception as e:
