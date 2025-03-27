@@ -274,13 +274,14 @@ def load_pipeline(model, device, cache_dir):
     pipe.vae.enable_tiling()
     pipe.enable_vae_slicing()
     pipe.enable_attention_slicing()
-    pipe.enable_model_cpu_offload()  # ✅ Auto-offload to CPU when needed
-
+    
     if device == "cuda":
         pipe.enable_xformers_memory_efficient_attention()  # ✅ Requires `pip install xformers`
         pipe.enable_sequential_cpu_offload()
+        pipe.enable_model_cpu_offload()  # ✅ Auto-offload to CPU when needed
 
     pipe.to(device)
+    safe_print(f"✅ FluxFillPipeline loaded on {device}.")
     return pipe
 
 
@@ -294,9 +295,6 @@ def inpaint(
     num_inference_steps,
     guidance_scale,
 ):
-    pipe.to(device)
-    safe_print(f"✅ FluxFillPipeline loaded on {device}.")
-
     # Free memory after loading
     gc.collect()
     if device == "cuda":
