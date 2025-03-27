@@ -1,6 +1,7 @@
 import torch
 from diffusers import (
     FluxFillPipeline,
+    DiffusionPipeline,
     FlowMatchEulerDiscreteScheduler,
     DPMSolverMultistepScheduler,
 )
@@ -16,7 +17,6 @@ import cv2
 import gc
 import sys
 import io
-import time
 
 # Use python 3.11 for this script
 
@@ -28,11 +28,12 @@ import time
 INPUT_IMAGE_PATH = "example_input_images/input_image_6.jpg"
 MASK_OUTPUT_PATH = "example_output_masks/clothes_mask_alpha_6.png"
 INPAINTED_OUTPUT_PATH = "example_output_images/nudified_output_6.png"
-USE_LOCAL_MODEL = False
+USE_LOCAL_MODEL = True
 LOCAL_FLUX_MODEL_PATH = "models/converted_model"  # Path to local model folder
-REMOTE_FLUX_MODEL = "black-forest-labs/FLUX.1-Fill-dev"
+REMOTE_FLUX_MODEL = "black-forest-labs/FLUX.1-dev"
 USE_LORA = True
 REMOTE_LORA = "CultriX/flux-nsfw-highress"
+PROMPT = "naked body, realistic skin texture, no clothes, nude, no bra, no top, no panties, no pants, no shorts"
 NUM_INFERENCE_STEPS = 25
 GUIDANCE_SCALE = 7.5  # Default guidance scale (adjustable)
 SAMPLER_NAME = "Euler"  # Change this to the desired sampler
@@ -70,15 +71,31 @@ def get_unique_output_path(base_path):
 
 
 # ======== LOAD INPUT IMAGE ========
-def load_image(image_path):
+def load_image_and_resize(image_path, target_width, target_height):
     if not os.path.exists(image_path):
         raise FileNotFoundError(f"❌ Image file '{image_path}' not found.")
     try:
         image = Image.open(image_path).convert("RGB")
         safe_print(f"✅ Loaded image: {image_path}")
-        return image
+        original_width, original_height = image.size
     except Exception as e:
         raise IOError(f"❌ Failed to load image: {e}")
+
+    # Only resize if the original image's width and height are larger than the target dimensions
+    if original_width > target_width and original_height > target_height:
+        aspect_ratio = original_width / original_height
+
+        if (target_width / target_height) > aspect_ratio:
+            new_height = target_height
+            new_width = int(aspect_ratio * target_height)
+        else:
+            new_width = target_width
+            new_height = int(target_width / aspect_ratio)
+
+        return image.resize((new_width, new_height), Image.LANCZOS)
+    else:
+        # If the original image is smaller, return the original image without resizing
+        return image
 
 
 # ======== LOAD SEGMENTATION MODEL ========
@@ -148,28 +165,8 @@ def save_black_inverted_alpha(clothes_mask, output_path, mask_grow_pixels=15):
 
     # Save as grayscale PNG
     Image.fromarray(mask).save(output_path)
-    safe_print(f"✅ Fixed mask saved as grayscale: {output_path}")
-
-
-# ======== RESIZE FUNCTION FOR INPAINTING ========
-def resize_to_fhd_keep_aspect(image, target_width, target_height):
-    original_width, original_height = image.size
-
-    # Only resize if the original image's width and height are larger than the target dimensions
-    if original_width > target_width and original_height > target_height:
-        aspect_ratio = original_width / original_height
-
-        if (target_width / target_height) > aspect_ratio:
-            new_height = target_height
-            new_width = int(aspect_ratio * target_height)
-        else:
-            new_width = target_width
-            new_height = int(target_width / aspect_ratio)
-
-        return image.resize((new_width, new_height), Image.LANCZOS)
-    else:
-        # If the original image is smaller, return the original image without resizing
-        return image
+    safe_print(f"✅ Mask saved: {output_path}")
+    return mask
 
 
 # ======== FUNCTION TO SELECT SAMPLER ========
@@ -197,65 +194,13 @@ def get_scheduler(scheduler_name, default_scheduler):
     return new_scheduler
 
 
-# ======== INPAINTING FUNCTION ========
-def inpaint(
-    image_path,
-    mask_path,
-    use_local_model,
-    model_path,
-    remote_model,
-    sampler_name,
-    num_inference_steps,
-    guidance_scale,
-    target_width,
-    target_height,
-    inpainted_output_path,
-    use_lora,
-    remote_lora,
-):
-    if use_local_model:
-        model = model_path
-    else:
-        model = remote_model
+def apply_lora(pipe, remote_lora):
+    pipe.load_lora_weights(remote_lora)
+    safe_print(f"✅ Lora {remote_lora} applied.")
+    return pipe
 
-    # Load the Flux model
-    safe_print("Loading Flux model...")
 
-    # Select the device
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    # Force minimal RAM/VRAM usage
-    gc.collect()  # Free CPU memory
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()  # Free GPU memory
-
-    # Load the tokenizer separately to reduce memory spike
-    tokenizer = AutoTokenizer.from_pretrained(model, use_fast=True)
-
-    # Load the model with extreme memory optimization
-    pipe = FluxFillPipeline.from_pretrained(
-        model,
-        torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-        low_cpu_mem_usage=True,  # Reduce memory footprint
-        use_safetensors=True,  # Avoid loading unnecessary weights
-        offload_folder="./offload_cache",  # ✅ Offload parts of the model to disk
-        tokenizer=tokenizer,  # Load tokenizer separately
-    ).to(device)
-
-    # Additional optimizations
-    pipe.enable_attention_slicing()
-    pipe.enable_xformers_memory_efficient_attention()  # ✅ Requires `pip install xformers`
-    pipe.enable_model_cpu_offload()  # ✅ Auto-offload to CPU when needed
-
-    # Free memory after loading
-    gc.collect()
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-
-    if use_lora:
-        pipe.load_lora_weights(remote_lora)
-        safe_print(f"✅ Lora {remote_lora} applied.")
-
+def apply_scheduler(pipe, sampler_name):
     # Set the sampler (scheduler)
     safe_print(f"🟡 Setting scheduler {sampler_name}...")
     pipe.scheduler = get_scheduler(sampler_name, pipe.scheduler)
@@ -270,35 +215,72 @@ def inpaint(
     # pipe.scheduler.config["invert_sigmas"] = False  # Leave as False or adjust as needed
 
     safe_print(f"Config: {pipe.scheduler.config}")
+    return pipe
 
-    # Enable memory optimizations
-    pipe.enable_attention_slicing()
-    pipe.enable_xformers_memory_efficient_attention()
-    pipe.enable_model_cpu_offload()  # ✅ Moves model parts to CPU when needed
 
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()  # Free GPU memory
-    gc.collect()  # Free CPU memory
+def get_device():
+    # Load model with optimized settings
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Force CPU if needed
-    if device.type == "cuda" and torch.cuda.get_device_properties(0).total_memory < 6 * 1024 * 1024 * 1024:
+    if (
+        device.type == "cuda"
+        and torch.cuda.get_device_properties(0).total_memory < 6 * 1024 * 1024 * 1024
+    ):
         safe_print("⚠️ Low VRAM detected, switching to CPU mode.")
-        pipe.to("cpu")
+        device = "cpu"
 
-    # Ensure model is on the correct device
+    return device
+
+
+def load_pipeline(model, device):
+    # Load the Flux model
+    safe_print(f"Loading Flux model {model}...")
+
+    # Force minimal RAM/VRAM usage
+    gc.collect()  # Free CPU memory
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()  # Free GPU memory
+
+    # Load the tokenizer separately to reduce memory spike
+    # tokenizer = AutoTokenizer.from_pretrained(model, use_fast=True)
+
+    torch_dtype = torch.float16 if device.type == "cuda" else torch.float32
+
+    pipe = None
+
+    # Additional optimizations
+    pipe.enable_attention_slicing()
+    pipe.enable_xformers_memory_efficient_attention()  # ✅ Requires `pip install xformers`
+    pipe.enable_model_cpu_offload()  # ✅ Auto-offload to CPU when needed
+
+    pipe = FluxFillPipeline.from_pretrained(
+        model,
+        torch_dtype=torch_dtype,
+    )
+
+    return pipe
+
+
+# ======== INPAINTING FUNCTION ========
+def inpaint(
+    image,
+    mask,
+    pipe,
+    device,
+    prompt,
+    num_inference_steps,
+    guidance_scale,
+):
     pipe.to(device)
-
     safe_print(f"✅ FluxFillPipeline loaded on {device}.")
 
-    # Load original image & mask
-    original_image = Image.open(image_path).convert("RGB")
-    original_mask = Image.open(mask_path).convert("L")
+    # Free memory after loading
+    gc.collect()
+    if device == "cuda":
+        torch.cuda.empty_cache()
 
-    # Resize both to FHD keeping aspect ratio
-    image = resize_to_fhd_keep_aspect(original_image, target_width, target_height)
-    mask = resize_to_fhd_keep_aspect(original_mask, target_width, target_height)
-
-    prompt = "naked body, realistic skin texture, no clothes, nude, no bra, no top, no panties, no pants, no shorts"
+    width, height = image.size
 
     try:
         safe_print("🟢 Starting inpainting process...")
@@ -306,21 +288,23 @@ def inpaint(
             prompt=prompt,
             image=image,
             mask_image=mask,
+            height=height,
+            width=width,
             num_inference_steps=num_inference_steps,
             guidance_scale=guidance_scale,
         ).images[0]
 
-        # Generate a unique output path if the file exists
-        output_path = get_unique_output_path(inpainted_output_path)
-
-        # Ensure same size output
-        result = result.resize(image.size)
-
-        result.save(output_path)
-        safe_print(f"✅ Inpainting completed. Output saved as '{output_path}'.")
+        return result
     except Exception as e:
         safe_print(f"❌ Inpainting failed. Error: {e}")
-        time.sleep(5)
+
+
+def save_result(result, image, output_path):
+    # Ensure same size output
+    result = result.resize(image.size)
+
+    result.save(output_path)
+    safe_print(f"✅ Inpainting completed. Output saved as '{output_path}'.")
 
 
 # ======== MAIN FUNCTION ========
@@ -329,28 +313,38 @@ def main():
         print(torch.cuda.is_available())  # Should return True if CUDA is working
         if torch.cuda.is_available():
             print(torch.cuda.get_device_name(0))  # Should print GTX 1080
-        
-        image = load_image(INPUT_IMAGE_PATH)
-        processor, model = load_segmentation_model()
-        clothes_mask = generate_clothing_mask(model, processor, image)
-        save_black_inverted_alpha(clothes_mask, MASK_OUTPUT_PATH, MASK_GROW_PIXELS)
+
+        image = load_image_and_resize(INPUT_IMAGE_PATH, TARGET_WIDTH, TARGET_HEIGHT)
+        processor, segmentation_model = load_segmentation_model()
+        mask = generate_clothing_mask(segmentation_model, processor, image)
+        mask = save_black_inverted_alpha(mask, MASK_OUTPUT_PATH, MASK_GROW_PIXELS)
+
+        inpaint_model = REMOTE_FLUX_MODEL
+
+        device = get_device()
+
+        pipe = load_pipeline(inpaint_model, device)
+
+        if USE_LORA:
+            pipe = apply_lora(pipe, REMOTE_LORA)
+
+        pipe = apply_scheduler(pipe, SAMPLER_NAME)
 
         # Retry inpainting process indefinitely with guidance scale
-        inpaint(
-            INPUT_IMAGE_PATH,
-            MASK_OUTPUT_PATH,
-            USE_LOCAL_MODEL,
-            LOCAL_FLUX_MODEL_PATH,
-            REMOTE_FLUX_MODEL,
-            SAMPLER_NAME,
+        result = inpaint(
+            image,
+            mask,
+            pipe,
+            device,
+            PROMPT,
             NUM_INFERENCE_STEPS,
             GUIDANCE_SCALE,
-            TARGET_WIDTH,
-            TARGET_HEIGHT,
-            INPAINTED_OUTPUT_PATH,
-            USE_LORA,
-            REMOTE_LORA,
         )
+
+        # Generate a unique output path if the file exists
+        output_path = get_unique_output_path(INPAINTED_OUTPUT_PATH)
+
+        save_result(result, image, output_path)
     except Exception as e:
         safe_print(f"❌ Error: {e}")
 

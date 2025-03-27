@@ -45,7 +45,7 @@ CTX = init_empty_weights if is_accelerate_available() else nullcontext
 dtype = torch.bfloat16 if dtype == "bf16" else torch.float32
 
 
-def load_original_checkpoint(args):
+def load_original_checkpoint():
     if original_state_dict_repo_id is not None:
         ckpt_path = hf_hub_download(
             repo_id=original_state_dict_repo_id, filename=filename
