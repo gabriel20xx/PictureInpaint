@@ -31,7 +31,7 @@ INPAINTED_OUTPUT_PATH = "example_output_images/nudified_output_6.png"
 USE_LOCAL_MODEL = True
 LOCAL_FLUX_MODEL_PATH = "models/converted_model"  # Path to local model folder
 REMOTE_FLUX_MODEL = "black-forest-labs/FLUX.1-Fill-dev"
-CACHE_DIR = "./cache"
+CACHE_DIR = "./.cache"
 USE_LORA = True
 REMOTE_LORA = "xey/sldr_flux_nsfw_v2-studio"
 PROMPT = "naked body, realistic skin texture, no clothes, nude, no bra, no top, no panties, no pants, no shorts"
@@ -231,12 +231,14 @@ def get_device():
         safe_print("⚠️ Low VRAM detected, switching to CPU mode.")
         device = "cpu"
 
+    safe_print(f"Using device: {device}")
+
     return device
 
 
 def load_pipeline(model, device, cache_dir):
     # Load the Flux model
-    safe_print(f"Loading Flux model {model}...")
+    safe_print(f"🟡 Loading Flux model {model}...")
 
     # Force minimal RAM/VRAM usage
     gc.collect()  # Free CPU memory
@@ -318,10 +320,6 @@ def save_result(result, image, output_path):
 # ======== MAIN FUNCTION ========
 def main():
     try:
-        print(torch.cuda.is_available())  # Should return True if CUDA is working
-        if torch.cuda.is_available():
-            print(torch.cuda.get_device_name(0))  # Should print GTX 1080
-
         image = load_image_and_resize(INPUT_IMAGE_PATH, TARGET_WIDTH, TARGET_HEIGHT)
         processor, segmentation_model = load_segmentation_model()
         mask = generate_clothing_mask(segmentation_model, processor, image)
