@@ -31,6 +31,7 @@ INPAINTED_OUTPUT_PATH = "example_output_images/nudified_output_6.png"
 USE_LOCAL_MODEL = True
 LOCAL_FLUX_MODEL_PATH = "models/converted_model"  # Path to local model folder
 REMOTE_FLUX_MODEL = "black-forest-labs/FLUX.1-dev"
+CACHE_DIR = "./cache"
 USE_LORA = True
 REMOTE_LORA = "xey/sldr_flux_nsfw_v2-studio"
 PROMPT = "naked body, realistic skin texture, no clothes, nude, no bra, no top, no panties, no pants, no shorts"
@@ -233,7 +234,7 @@ def get_device():
     return device
 
 
-def load_pipeline(model, device):
+def load_pipeline(model, device, cache_dir):
     # Load the Flux model
     safe_print(f"Loading Flux model {model}...")
 
@@ -250,6 +251,7 @@ def load_pipeline(model, device):
     pipe = FluxFillPipeline.from_pretrained(
         model,
         torch_dtype=torch_dtype,
+        cache_dir=cache_dir,
         low_cpu_mem_usage=True,  # Reduce memory footprint
         # use_safetensors=True,  # Avoid loading unnecessary weights
         # offload_folder="./offload_cache",  # ✅ Offload parts of the model to disk
@@ -329,7 +331,7 @@ def main():
 
         device = get_device()
 
-        pipe = load_pipeline(inpaint_model, device)
+        pipe = load_pipeline(inpaint_model, device, CACHE_DIR)
 
         if USE_LORA:
             pipe = apply_lora(pipe, REMOTE_LORA)
