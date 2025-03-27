@@ -41,6 +41,7 @@ MASK_GROW_PIXELS = 15  # Amount to grow (dilate) mask
 TARGET_WIDTH = 2048
 TARGET_HEIGHT = 2048
 LOW_RAM_MODE = False
+LOW_VRAM_MODE = True
 
 # Force UTF-8 encoding for Windows console
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
@@ -236,7 +237,7 @@ def get_device():
     return device
 
 
-def load_pipeline(model, device, cache_dir, low_ram_mode):
+def load_pipeline(model, device, cache_dir, low_ram_mode, low_vram_mode):
     # Force minimal RAM/VRAM usage
     gc.collect()  # Free CPU memory
     if device == "cuda":
@@ -277,7 +278,7 @@ def load_pipeline(model, device, cache_dir, low_ram_mode):
         pipe.enable_attention_slicing()
         pipe.enable_model_cpu_offload()
 
-    if device == "cuda":
+    if device == "cuda" and low_vram_mode:
         pipe.enable_xformers_memory_efficient_attention()  # ✅ Requires `pip install xformers`
 
     pipe.to(device)
@@ -340,7 +341,7 @@ def main():
 
         device = get_device()
 
-        pipe = load_pipeline(inpaint_model, device, CACHE_DIR, LOW_RAM_MODE)
+        pipe = load_pipeline(inpaint_model, device, CACHE_DIR, LOW_RAM_MODE, LOW_VRAM_MODE)
 
         if USE_LORA:
             pipe = apply_lora(pipe, REMOTE_LORA)
