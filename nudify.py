@@ -318,7 +318,7 @@ def inpaint(
         torch.cuda.empty_cache()
 
     try:
-        safe_print("🟢 Starting inpainting process...")
+        safe_print(f"🟢 Starting inpainting process on {device}...")
         with autocast(str(device)):
             result = pipe(
                 prompt=prompt,
