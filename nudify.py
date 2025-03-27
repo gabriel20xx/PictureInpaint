@@ -250,13 +250,20 @@ def load_pipeline(model, device):
     pipe = FluxFillPipeline.from_pretrained(
         model,
         torch_dtype=torch_dtype,
+        low_cpu_mem_usage=True,  # Reduce memory footprint
+        # use_safetensors=True,  # Avoid loading unnecessary weights
+        # offload_folder="./offload_cache",  # ✅ Offload parts of the model to disk
+        # tokenizer=tokenizer,  # Load tokenizer separately
     )
+    pipe.enable_sequential_cpu_offload()
+    pipe.vae.enable_slicing()
+    pipe.vae.enable_tiling()
+    pipe.to(torch.float16)  # l casting here instead of in the pipeline constructor because doing so in the constructor loads all models into CPU memory at once
 
     # Additional optimizations
     pipe.enable_attention_slicing()
     pipe.enable_xformers_memory_efficient_attention()  # ✅ Requires `pip install xformers`
     pipe.enable_model_cpu_offload()  # ✅ Auto-offload to CPU when needed
-
 
     return pipe
 
