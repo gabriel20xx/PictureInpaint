@@ -269,6 +269,7 @@ def load_pipeline(model, device, cache_dir, low_ram_mode, low_vram_mode):
             low_cpu_mem_usage=low_ram_mode,  # Reduce memory footprint
         )
         print("✅ Model downloaded and saved to cache.")
+    pipe.reset_device_map()
     pipe.to(device)
 
     if low_ram_mode:
