@@ -10,6 +10,7 @@ from transformers import (
     AutoModelForSemanticSegmentation,
 )
 from PIL import Image
+import gradio as gr
 import os
 import numpy as np
 import cv2
@@ -21,7 +22,7 @@ import io
 
 # Run these once
 # pip install torch --index-url https://download.pytorch.org/whl/cu118
-# pip install diffusers transformers pillow numpy opencv-python accelerate sentencepiece peft xformers gc bitdandbytes
+# pip install diffusers transformers pillow numpy opencv-python accelerate sentencepiece peft xformers gradio gc bitdandbytes
 
 # ======== CONFIGURATION ========
 INPUT_IMAGE_PATH = "example_input_images/input_image_6.jpg"
@@ -30,9 +31,11 @@ INPAINTED_OUTPUT_PATH = "example_output_images/nudified_output_6.png"
 USE_LOCAL_MODEL = True
 LOCAL_FLUX_MODEL_PATH = "models/converted_model"  # Path to local model folder
 REMOTE_FLUX_MODEL = "black-forest-labs/FLUX.1-Fill-dev"
+AVAILABLE_CHECKPOINTS = ["black-forest-labs/FLUX.1-Fill-dev"]
 CACHE_DIR = "./.cache"
 USE_LORA = True
 REMOTE_LORA = "xey/sldr_flux_nsfw_v2-studio"
+AVAILABLE_LORAS = ["None", "xey/sldr_flux_nsfw_v2-studio"]
 INVERT_SIGMAS = False
 USE_KARRAS_SIGMAS = False
 USE_EXPONENTIAL_SIGMAS = False
@@ -226,7 +229,9 @@ def apply_scheduler(
     pipe.scheduler.config["use_beta_sigmas"] = use_beta_sigmas
 
     # Optionally, also adjust other parameters if needed
-    pipe.scheduler.config["invert_sigmas"] = invert_sigmas  # Leave as False or adjust as needed
+    pipe.scheduler.config["invert_sigmas"] = (
+        invert_sigmas  # Leave as False or adjust as needed
+    )
 
     safe_print(f"Config: {pipe.scheduler.config}")
     return pipe
@@ -342,14 +347,27 @@ def save_result(result, image, output_path):
 
 
 # ======== MAIN FUNCTION ========
-def main():
+def main(
+    input_image,
+    prompt,
+    checkpoint_model,
+    lora_model,
+    num_inference_steps,
+    guidance_scale,
+    mask_grow_pixels,
+    sampler_name,
+    use_karras_sigmas,
+    use_exponential_sigmas,
+    use_beta_sigmas,
+    invert_sigmas
+):
     try:
-        image = load_image_and_resize(INPUT_IMAGE_PATH, TARGET_WIDTH, TARGET_HEIGHT)
+        image = load_image_and_resize(input_image, TARGET_WIDTH, TARGET_HEIGHT)
         processor, segmentation_model = load_segmentation_model()
         mask = generate_clothing_mask(segmentation_model, processor, image)
         mask = save_black_inverted_alpha(mask, MASK_OUTPUT_PATH, MASK_GROW_PIXELS)
 
-        inpaint_model = REMOTE_FLUX_MODEL
+        inpaint_model = checkpoint_model
 
         device = get_device()
 
@@ -357,16 +375,16 @@ def main():
             inpaint_model, device, CACHE_DIR, LOW_RAM_MODE, LOW_VRAM_MODE
         )
 
-        if USE_LORA:
-            pipe = apply_lora(pipe, REMOTE_LORA)
+        if lora_model != "None":
+            pipe = apply_lora(pipe, lora_model)
 
         pipe = apply_scheduler(
             pipe,
-            SAMPLER_NAME,
-            INVERT_SIGMAS,
-            USE_KARRAS_SIGMAS,
-            USE_EXPONENTIAL_SIGMAS,
-            USE_BETA_SIGMAS,
+            sampler_name,
+            invert_sigmas,
+            use_karras_sigmas,
+            use_exponential_sigmas,
+            use_beta_sigmas,
         )
 
         # Retry inpainting process indefinitely with guidance scale
@@ -375,9 +393,9 @@ def main():
             mask,
             pipe,
             device,
-            PROMPT,
-            NUM_INFERENCE_STEPS,
-            GUIDANCE_SCALE,
+            prompt,
+            num_inference_steps,
+            guidance_scale,
         )
 
         # Generate a unique output path if the file exists
@@ -388,5 +406,31 @@ def main():
         safe_print(f"❌ Error: {e}")
 
 
+# Define Gradio UI
+iface = gr.Interface(
+    fn=main,
+    inputs=[
+        gr.Image(type="pil", label="Upload Image"),
+        gr.Textbox(value="", placeholder="Prompt", label="Prompt"),
+        gr.Dropdown(
+            AVAILABLE_CHECKPOINTS,
+            value=AVAILABLE_CHECKPOINTS[0],
+            label="Checkpoint Model",
+        ),
+        gr.Dropdown(AVAILABLE_LORAS, value="None", label="LoRA Model"),
+        gr.Slider(5, 50, value=25, step=1, label="Inference Steps"),
+        gr.Slider(1.0, 15.0, value=7.5, step=0.5, label="Guidance Scale"),
+        gr.Slider(0, 50, value=MASK_GROW_PIXELS, step=1, label="Mask Growth (px)"),
+        gr.Dropdown(["Euler", "DPM++ 2M"], value=SAMPLER_NAME, label="Sampler Type"),
+        gr.Checkbox(value=USE_KARRAS_SIGMAS, label="Use Karras Sigmas"),
+        gr.Checkbox(value=USE_EXPONENTIAL_SIGMAS, label="Use Exponential Sigmas"),
+        gr.Checkbox(value=USE_BETA_SIGMAS, label="Use Beta Sigmas"),
+        gr.Checkbox(value=INVERT_SIGMAS, label="Invert Sigmas"),
+    ],
+    outputs=gr.Image(type="pil", label="Processed Image"),
+    title="Fully Configurable Hugging Face Inpainting",
+    description="Select a checkpoint and LoRA from Hugging Face and apply inpainting.",
+)
+
 if __name__ == "__main__":
-    main()
+    iface.launch(server_name="0.0.0.0", server_port=7860)
