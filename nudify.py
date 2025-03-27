@@ -33,7 +33,8 @@ REMOTE_FLUX_MODEL = "black-forest-labs/FLUX.1-Fill-dev"
 CACHE_DIR = "./.cache"
 USE_LORA = True
 REMOTE_LORA = "xey/sldr_flux_nsfw_v2-studio"
-PROMPT = "naked body, realistic skin texture, no clothes, nude, no bra, no top, no panties, no pants, no shorts"
+PROMPT = "naked body, realistic skin texture, no clothes, nude, no bra, no top, no panties, no pants, no shorts. \
+    Remove the cloth from the image."
 NUM_INFERENCE_STEPS = 25
 GUIDANCE_SCALE = 7.5  # Default guidance scale (adjustable)
 SAMPLER_NAME = "Euler"  # Change this to the desired sampler
@@ -341,7 +342,9 @@ def main():
 
         device = get_device()
 
-        pipe = load_pipeline(inpaint_model, device, CACHE_DIR, LOW_RAM_MODE, LOW_VRAM_MODE)
+        pipe = load_pipeline(
+            inpaint_model, device, CACHE_DIR, LOW_RAM_MODE, LOW_VRAM_MODE
+        )
 
         if USE_LORA:
             pipe = apply_lora(pipe, REMOTE_LORA)
