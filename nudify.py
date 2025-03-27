@@ -4,7 +4,6 @@ from diffusers import (
     FlowMatchEulerDiscreteScheduler,
     DPMSolverMultistepScheduler,
 )
-from diffusers.models.attention_processor import AttnProcessor2_0
 from transformers import (
     SegformerImageProcessor,
     AutoModelForSemanticSegmentation,
