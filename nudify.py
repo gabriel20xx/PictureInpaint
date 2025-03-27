@@ -26,7 +26,7 @@ INPUT_IMAGE_PATH = "example_input_images/input_image_6.jpg"
 MASK_OUTPUT_PATH = "example_output_masks/clothes_mask_alpha_6.png"
 INPAINTED_OUTPUT_PATH = "example_output_images/nudified_output_6.png"
 USE_LOCAL_MODEL = False
-LOCAL_FLUX_MODEL_PATH = "converted_model"  # Path to local model folder
+LOCAL_FLUX_MODEL_PATH = "models/converted_model"  # Path to local model folder
 REMOTE_FLUX_MODEL = "black-forest-labs/FLUX.1-Fill-dev"
 USE_LORA = True
 REMOTE_LORA = "CultriX/flux-nsfw-highress"
@@ -285,6 +285,10 @@ def inpaint(
 # ======== MAIN FUNCTION ========
 def main():
     try:
+        print(torch.cuda.is_available())  # Should return True if CUDA is working
+        if torch.cuda.is_available():
+            print(torch.cuda.get_device_name(0))  # Should print GTX 1080
+        
         image = load_image(INPUT_IMAGE_PATH)
         processor, model = load_segmentation_model()
         clothes_mask = generate_clothing_mask(model, processor, image)

@@ -32,13 +32,13 @@ python scripts/convert_flux_to_diffusers.py  \
 
 # Configuration variables
 original_state_dict_repo_id = "black-forest-labs/FLUX.1-schnell"
-filename = "models/STOIQOAfroditeFLUXXL_F1DAlpha.safetensors"
+filename = "models/original_models/STOIQOAfroditeFLUXXL_F1DAlpha.safetensors"
 checkpoint_path = None  # Set this if you want to use a local checkpoint path
 in_channels = 64
 out_channels = None
 vae = False  # Set True if using VAE
 transformer = True  # Set True if using Transformer
-output_path = "flux-schnell"
+output_path = "models/converted_model"
 dtype = "bf16"  # Use "bf16" or "float32"
 
 CTX = init_empty_weights if is_accelerate_available() else nullcontext
