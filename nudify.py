@@ -317,8 +317,6 @@ def inpaint(
     if device == "cuda":
         torch.cuda.empty_cache()
 
-    width, height = image.size
-
     try:
         safe_print("🟢 Starting inpainting process...")
         with autocast(str(device)):
@@ -326,8 +324,6 @@ def inpaint(
                 prompt=prompt,
                 image=image,
                 mask_image=mask,
-                height=height,
-                width=width,
                 num_inference_steps=num_inference_steps,
                 guidance_scale=guidance_scale,
             ).images[0]
