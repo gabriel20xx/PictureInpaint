@@ -40,6 +40,7 @@ SAMPLER_NAME = "Euler"  # Change this to the desired sampler
 MASK_GROW_PIXELS = 15  # Amount to grow (dilate) mask
 TARGET_WIDTH = 2048
 TARGET_HEIGHT = 2048
+LOW_RAM_MODE = False
 
 # Force UTF-8 encoding for Windows console
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
@@ -235,7 +236,7 @@ def get_device():
     return device
 
 
-def load_pipeline(model, device, cache_dir):
+def load_pipeline(model, device, cache_dir, low_ram_mode):
     # Force minimal RAM/VRAM usage
     gc.collect()  # Free CPU memory
     if device == "cuda":
@@ -250,9 +251,9 @@ def load_pipeline(model, device, cache_dir):
             model,
             torch_dtype=torch_dtype,
             cache_dir=cache_dir,
-            low_cpu_mem_usage=True,  # Reduce memory footprint
+            low_cpu_mem_usage=low_ram_mode,  # Reduce memory footprint
             local_files_only=True,
-            use_safetensors=True,  # Avoid loading unnecessary weights
+            use_safetensors=low_ram_mode,  # Avoid loading unnecessary weights
             offload_folder="./offload_cache",  # ✅ Offload parts of the model to disk
             device_map="balanced",
         )
@@ -264,7 +265,7 @@ def load_pipeline(model, device, cache_dir):
             model,
             cache_dir=cache_dir,
             torch_dtype=torch_dtype,
-            low_cpu_mem_usage=True,  # Reduce memory footprint
+            low_cpu_mem_usage=low_ram_mode,  # Reduce memory footprint
         )
         print("✅ Model downloaded and saved to cache.")
 
@@ -338,7 +339,7 @@ def main():
 
         device = get_device()
 
-        pipe = load_pipeline(inpaint_model, device, CACHE_DIR)
+        pipe = load_pipeline(inpaint_model, device, CACHE_DIR, LOW_RAM_MODE)
 
         if USE_LORA:
             pipe = apply_lora(pipe, REMOTE_LORA)
