@@ -220,17 +220,13 @@ def apply_scheduler(
     pipe.scheduler = get_scheduler(sampler_name, pipe.scheduler)
     safe_print("✅ Scheduler set")
 
-    # Enable Karras sigmas
-    if use_karras_sigmas:
-        pipe.scheduler.config["use_karras_sigmas"] = True
-    if use_exponential_sigmas:
-        pipe.scheduler.config["use_exponential_sigmas"] = True
-    if use_beta_sigmas:
-        pipe.scheduler.config["use_beta_sigmas"] = True
+    # Enable sigmas
+    pipe.scheduler.config["use_karras_sigmas"] = use_karras_sigmas
+    pipe.scheduler.config["use_exponential_sigmas"] = use_exponential_sigmas
+    pipe.scheduler.config["use_beta_sigmas"] = use_beta_sigmas
 
     # Optionally, also adjust other parameters if needed
-    if invert_sigmas:
-        pipe.scheduler.config["invert_sigmas"] = True  # Leave as False or adjust as needed
+    pipe.scheduler.config["invert_sigmas"] = invert_sigmas  # Leave as False or adjust as needed
 
     safe_print(f"Config: {pipe.scheduler.config}")
     return pipe
