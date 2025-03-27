@@ -1,3 +1,4 @@
 .qodo
-models/*
-converted_model/*
+models
+converted_model
+cache

@@ -30,7 +30,7 @@ MASK_OUTPUT_PATH = "example_output_masks/clothes_mask_alpha_6.png"
 INPAINTED_OUTPUT_PATH = "example_output_images/nudified_output_6.png"
 USE_LOCAL_MODEL = True
 LOCAL_FLUX_MODEL_PATH = "models/converted_model"  # Path to local model folder
-REMOTE_FLUX_MODEL = "black-forest-labs/FLUX.1-dev"
+REMOTE_FLUX_MODEL = "black-forest-labs/FLUX.1-Fill-dev"
 CACHE_DIR = "./cache"
 USE_LORA = True
 REMOTE_LORA = "xey/sldr_flux_nsfw_v2-studio"
@@ -225,7 +225,7 @@ def get_device():
 
     # Force CPU if needed
     if (
-        device.type == "cuda"
+        device == "cuda"
         and torch.cuda.get_device_properties(0).total_memory < 6 * 1024 * 1024 * 1024
     ):
         safe_print("⚠️ Low VRAM detected, switching to CPU mode.")
@@ -246,7 +246,7 @@ def load_pipeline(model, device, cache_dir):
     # Load the tokenizer separately to reduce memory spike
     # tokenizer = AutoTokenizer.from_pretrained(model, use_fast=True)
 
-    torch_dtype = torch.float16 if device.type == "cuda" else torch.float32
+    torch_dtype = torch.float16 if device == "cuda" else torch.float32
 
     pipe = FluxFillPipeline.from_pretrained(
         model,
@@ -260,7 +260,7 @@ def load_pipeline(model, device, cache_dir):
     pipe.enable_sequential_cpu_offload()
     pipe.vae.enable_slicing()
     pipe.vae.enable_tiling()
-    pipe.to(torch.float16)  # l casting here instead of in the pipeline constructor because doing so in the constructor loads all models into CPU memory at once
+    pipe.to(device)
 
     # Additional optimizations
     pipe.enable_attention_slicing()
