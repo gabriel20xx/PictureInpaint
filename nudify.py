@@ -325,7 +325,7 @@ def inpaint(
 
     try:
         safe_print("🟢 Starting inpainting process...")
-        with autocast(device):
+        with autocast(str(device)):
             result = pipe(
                 prompt=prompt,
                 image=image,
