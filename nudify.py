@@ -19,13 +19,17 @@ import time
 # Use python 3.11 for this script
 
 # Run this once
-# pip install torch diffusers transformers pillow numpy opencv-python accelerate sentencepiece
+# pip install torch diffusers transformers pillow numpy opencv-python accelerate sentencepiece peft
 
 # ======== CONFIGURATION ========
 INPUT_IMAGE_PATH = "example_input_images/input_image_6.jpg"
 MASK_OUTPUT_PATH = "example_output_masks/clothes_mask_alpha_6.png"
 INPAINTED_OUTPUT_PATH = "example_output_images/nudified_output_6.png"
+USE_LOCAL_MODEL = False
 LOCAL_FLUX_MODEL_PATH = "converted_model"  # Path to local model folder
+REMOTE_FLUX_MODEL = "black-forest-labs/FLUX.1-Fill-dev"
+USE_LORA = True
+REMOTE_LORA = "CultriX/flux-nsfw-highress"
 NUM_INFERENCE_STEPS = 25
 GUIDANCE_SCALE = 7.5  # Default guidance scale (adjustable)
 SAMPLER_NAME = "Euler"  # Change this to the desired sampler
@@ -194,23 +198,36 @@ def get_scheduler(scheduler_name, default_scheduler):
 def inpaint(
     image_path,
     mask_path,
+    use_local_model,
     model_path,
+    remote_model,
     sampler_name,
     num_inference_steps,
     guidance_scale,
     target_width,
     target_height,
     inpainted_output_path,
+    use_lora,
+    remote_lora,
 ):
-    # Load the converted Flux model
-    safe_print("Loading converted Flux model...")
+    # Load the Flux model
+    safe_print("Loading Flux model...")
 
     # Check for available device (GPU if possible)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     torch_dtype = torch.float16 if device.type == "cuda" else torch.float32
 
     # Load the model with correct dtype based on the available device
-    pipe = FluxFillPipeline.from_pretrained(model_path, torch_dtype=torch_dtype)
+    if use_local_model:
+        pipe = FluxFillPipeline.from_pretrained(model_path, torch_dtype=torch_dtype)
+        safe_print(f"✅ Checkpoint {model_path} applied")
+    else:
+        pipe = FluxFillPipeline.from_pretrained(remote_model, torch_dtype=torch_dtype)
+        safe_print(f"✅ Checkpoint {remote_model} applied.")
+
+    if use_lora:
+        pipe.load_lora_weights(remote_lora)
+        safe_print(f"✅ Lora {remote_lora} applied.")
 
     # Set the sampler (scheduler)
     safe_print(f"🟡 Setting scheduler {sampler_name}...")
@@ -277,13 +294,17 @@ def main():
         inpaint(
             INPUT_IMAGE_PATH,
             MASK_OUTPUT_PATH,
+            USE_LOCAL_MODEL,
             LOCAL_FLUX_MODEL_PATH,
+            REMOTE_FLUX_MODEL,
             SAMPLER_NAME,
             NUM_INFERENCE_STEPS,
             GUIDANCE_SCALE,
             TARGET_WIDTH,
             TARGET_HEIGHT,
             INPAINTED_OUTPUT_PATH,
+            USE_LORA,
+            REMOTE_LORA,
         )
     except Exception as e:
         safe_print(f"❌ Error: {e}")
