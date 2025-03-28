@@ -26,7 +26,7 @@ import gc
 MASK_OUTPUT_PATH = "example_output_masks/clothes_mask_alpha_6.png"
 INPAINTED_OUTPUT_PATH = "example_output_images/nudified_output_6.png"
 AVAILABLE_CHECKPOINTS = ["black-forest-labs/FLUX.1-Fill-dev"]
-CACHE_DIR = "E:/.cache"
+CACHE_DIR = "./.cache"
 AVAILABLE_LORAS = ["None", "xey/sldr_flux_nsfw_v2-studio"]
 INVERT_SIGMAS = False
 USE_KARRAS_SIGMAS = False
@@ -40,7 +40,7 @@ SAMPLER_NAME = "Euler"  # Change this to the desired sampler
 MASK_GROW_PIXELS = 15  # Amount to grow (dilate) mask
 TARGET_WIDTH = 2048
 TARGET_HEIGHT = 2048
-LOW_RAM_MODE = True
+LOW_RAM_MODE = False
 LOW_VRAM_MODE = True
 
 
@@ -72,15 +72,15 @@ def get_unique_output_path(base_path):
 # ======== LOAD INPUT IMAGE ========
 def load_image_and_resize(image, target_width, target_height):
     if image is None:
-        raise ValueError("❌ No image provided.")
+        raise ValueError("No image provided.")
 
     try:
         # Ensure the image is in RGB format
         image = image.convert("RGB")
-        safe_print("✅ Loaded image successfully.")
+        safe_print("Loaded image successfully.")
         original_width, original_height = image.size
     except Exception as e:
-        raise IOError(f"❌ Failed to process image: {e}")
+        raise IOError(f"Failed to process image: {e}")
 
     # Resize only if the original image is larger than the target dimensions
     if original_width > target_width and original_height > target_height:
@@ -102,7 +102,7 @@ def load_image_and_resize(image, target_width, target_height):
 # ======== LOAD SEGMENTATION MODEL ========
 def load_segmentation_model():
     try:
-        safe_print("🟡 Loading clothes segmentation model...")
+        safe_print("Loading clothes segmentation model...")
         processor = SegformerImageProcessor.from_pretrained(
             "sayeed99/segformer_b3_clothes"
         )
@@ -110,10 +110,10 @@ def load_segmentation_model():
             "sayeed99/segformer_b3_clothes"
         )
         model.eval()
-        safe_print("✅ Segmentation model loaded.")
+        safe_print("Segmentation model loaded.")
         return processor, model
     except Exception as e:
-        raise RuntimeError(f"❌ Failed to load segmentation model: {e}")
+        raise RuntimeError(f"Failed to load segmentation model: {e}")
 
 
 # ======== GENERATE CLOTHES MASK ========
@@ -135,7 +135,7 @@ def generate_clothing_mask(model, processor, image):
     )
 
     if np.count_nonzero(clothes_mask_resized) == 0:
-        raise ValueError("⚠️ No clothing detected in the image.")
+        raise ValueError("No clothing detected in the image.")
 
     return clothes_mask_resized
 
@@ -166,7 +166,7 @@ def save_black_inverted_alpha(clothes_mask, output_path, mask_grow_pixels=15):
 
     # Save as grayscale PNG
     Image.fromarray(mask).save(output_path)
-    safe_print(f"✅ Mask saved: {output_path}")
+    safe_print(f"Mask saved: {output_path}")
     return output_path
 
 
@@ -197,7 +197,7 @@ def get_scheduler(scheduler_name, default_scheduler):
 
 def apply_lora(pipe, remote_lora):
     pipe.load_lora_weights(remote_lora)
-    safe_print(f"✅ Lora {remote_lora} applied.")
+    safe_print(f"Lora {remote_lora} applied.")
     return pipe
 
 
@@ -210,9 +210,9 @@ def apply_scheduler(
     use_beta_sigmas,
 ):
     # Set the sampler (scheduler)
-    safe_print(f"🟡 Setting scheduler {sampler_name}...")
+    safe_print(f"Setting scheduler {sampler_name}...")
     pipe.scheduler = get_scheduler(sampler_name, pipe.scheduler)
-    safe_print("✅ Scheduler set")
+    safe_print("Scheduler set")
 
     # Enable sigmas
     pipe.scheduler.config["use_karras_sigmas"] = use_karras_sigmas
@@ -237,7 +237,7 @@ def get_device():
         device == "cuda"
         and torch.cuda.get_device_properties(0).total_memory < 6 * 1024 * 1024 * 1024
     ):
-        safe_print("⚠️ Low VRAM detected, switching to CPU mode.")
+        safe_print("Low VRAM detected, switching to CPU mode.")
         device = "cpu"
 
     safe_print(f"Using device: {device}")
@@ -254,29 +254,26 @@ def load_pipeline(model, device, cache_dir, low_ram_mode, low_vram_mode):
     torch_dtype = torch.float16 if device == "cuda" else torch.float32
 
     # Load the Flux model
-    safe_print(f"🟡 Loading Flux model {model}...")
+    safe_print(f"Loading Flux model {model}...")
     try:
         pipe = FluxFillPipeline.from_pretrained(
             model,
             torch_dtype=torch_dtype,
             cache_dir=cache_dir,
-            low_cpu_mem_usage=low_ram_mode,  # Reduce memory footprint
             local_files_only=True,
             use_safetensors=low_ram_mode,  # Avoid loading unnecessary weights
             offload_folder="./offload_cache",  # ✅ Offload parts of the model to disk
-            device_map="balanced",
         )
-        print("✅ Model loaded from local cache.")
+        print("Model loaded from local cache.")
     except OSError:
-        print("⚠️ Model not found locally. Downloading from Hugging Face...")
+        print("Model not found locally. Downloading from Hugging Face...")
         # Download the model if not found locally
         pipe = FluxFillPipeline.from_pretrained(
             model,
             cache_dir=cache_dir,
             torch_dtype=torch_dtype,
-            low_cpu_mem_usage=low_ram_mode,  # Reduce memory footprint
         )
-        print("✅ Model downloaded and saved to cache.")
+        print("Model downloaded and saved to cache.")
     pipe.reset_device_map()
     if device == "cuda" and low_vram_mode:
         pipe.to("cuda", torch_dtype=torch.float16)  # Use fp16 precision
@@ -294,7 +291,7 @@ def load_pipeline(model, device, cache_dir, low_ram_mode, low_vram_mode):
     if device == "cuda" and low_vram_mode:
         pipe.enable_xformers_memory_efficient_attention()  # ✅ Requires `pip install xformers`
 
-    safe_print(f"✅ FluxFillPipeline loaded on {device}.")
+    safe_print(f"FluxFillPipeline loaded on {device}.")
     return pipe
 
 
@@ -314,7 +311,7 @@ def inpaint(
         torch.cuda.empty_cache()
 
     try:
-        safe_print(f"🟢 Starting inpainting process on {device}...")
+        safe_print(f"Starting inpainting process on {device}...")
         with autocast(str(device)):
             result = pipe(
                 prompt=prompt,
@@ -326,7 +323,7 @@ def inpaint(
 
         return result
     except Exception as e:
-        safe_print(f"❌ Inpainting failed. Error: {e}")
+        safe_print(f"Inpainting failed. Error: {e}")
 
 
 def save_result(result, image, output_path):
@@ -334,7 +331,7 @@ def save_result(result, image, output_path):
     result = result.resize(image.size)
 
     result.save(output_path)
-    safe_print(f"✅ Inpainting completed. Output saved as '{output_path}'.")
+    safe_print(f"Inpainting completed. Output saved as '{output_path}'.")
 
 
 # ======== MAIN FUNCTION ========
@@ -396,7 +393,7 @@ def process_image(
         save_result(result, image, output_path)
         return mask_path, output_path
     except Exception as e:
-        safe_print(f"❌ Error: {e}")
+        safe_print(f"Error: {e}")
 
 
 # Define Gradio UI
