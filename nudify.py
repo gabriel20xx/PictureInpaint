@@ -15,8 +15,6 @@ import os
 import numpy as np
 import cv2
 import gc
-import sys
-import io
 
 # Use python 3.11 for this script
 
@@ -28,7 +26,7 @@ import io
 MASK_OUTPUT_PATH = "example_output_masks/clothes_mask_alpha_6.png"
 INPAINTED_OUTPUT_PATH = "example_output_images/nudified_output_6.png"
 AVAILABLE_CHECKPOINTS = ["black-forest-labs/FLUX.1-Fill-dev"]
-CACHE_DIR = "./.cache"
+CACHE_DIR = "E:/.cache"
 AVAILABLE_LORAS = ["None", "xey/sldr_flux_nsfw_v2-studio"]
 INVERT_SIGMAS = False
 USE_KARRAS_SIGMAS = False
@@ -42,11 +40,8 @@ SAMPLER_NAME = "Euler"  # Change this to the desired sampler
 MASK_GROW_PIXELS = 15  # Amount to grow (dilate) mask
 TARGET_WIDTH = 2048
 TARGET_HEIGHT = 2048
-LOW_RAM_MODE = False
+LOW_RAM_MODE = True
 LOW_VRAM_MODE = True
-
-# Force UTF-8 encoding for Windows console
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 
 
 # ======== SAFE PRINT FUNCTION ========
@@ -75,17 +70,19 @@ def get_unique_output_path(base_path):
 
 
 # ======== LOAD INPUT IMAGE ========
-def load_image_and_resize(image_path, target_width, target_height):
-    if not os.path.exists(image_path):
-        raise FileNotFoundError(f"❌ Image file '{image_path}' not found.")
+def load_image_and_resize(image, target_width, target_height):
+    if image is None:
+        raise ValueError("❌ No image provided.")
+
     try:
-        image = Image.open(image_path).convert("RGB")
-        safe_print(f"✅ Loaded image: {image_path}")
+        # Ensure the image is in RGB format
+        image = image.convert("RGB")
+        safe_print("✅ Loaded image successfully.")
         original_width, original_height = image.size
     except Exception as e:
-        raise IOError(f"❌ Failed to load image: {e}")
+        raise IOError(f"❌ Failed to process image: {e}")
 
-    # Only resize if the original image's width and height are larger than the target dimensions
+    # Resize only if the original image is larger than the target dimensions
     if original_width > target_width and original_height > target_height:
         aspect_ratio = original_width / original_height
 
@@ -97,9 +94,9 @@ def load_image_and_resize(image_path, target_width, target_height):
             new_height = int(target_width / aspect_ratio)
 
         return image.resize((new_width, new_height), Image.LANCZOS)
-    else:
-        # If the original image is smaller, return the original image without resizing
-        return image
+
+    # If the original image is smaller, return it as is
+    return image
 
 
 # ======== LOAD SEGMENTATION MODEL ========
@@ -170,7 +167,7 @@ def save_black_inverted_alpha(clothes_mask, output_path, mask_grow_pixels=15):
     # Save as grayscale PNG
     Image.fromarray(mask).save(output_path)
     safe_print(f"✅ Mask saved: {output_path}")
-    return mask
+    return output_path
 
 
 # ======== FUNCTION TO SELECT SAMPLER ========
@@ -360,8 +357,7 @@ def process_image(
         image = load_image_and_resize(input_image, TARGET_WIDTH, TARGET_HEIGHT)
         processor, segmentation_model = load_segmentation_model()
         mask = generate_clothing_mask(segmentation_model, processor, image)
-        mask = save_black_inverted_alpha(mask, MASK_OUTPUT_PATH, mask_grow_pixels)
-        yield mask, None
+        mask_path = save_black_inverted_alpha(mask, MASK_OUTPUT_PATH, mask_grow_pixels)
 
         inpaint_model = checkpoint_model
 
@@ -398,7 +394,7 @@ def process_image(
         output_path = get_unique_output_path(INPAINTED_OUTPUT_PATH)
 
         save_result(result, image, output_path)
-        yield mask, result
+        return mask_path, output_path
     except Exception as e:
         safe_print(f"❌ Error: {e}")
 
@@ -467,5 +463,13 @@ with gr.Blocks() as app:
         outputs=[mask_output, final_output],
     )
 
+
 if __name__ == "__main__":
-    app.launch(server_name="127.0.0.1", server_port=7860, debug=True)
+    app.launch(
+        server_name="0.0.0.0",
+        server_port=7861,
+        debug=True,
+        show_api=False,
+        inbrowser=True,
+    )
+    print("Gradio app is running and ready to use at http://127.0.0.1:7860")
