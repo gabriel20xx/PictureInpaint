@@ -297,9 +297,6 @@ def inpaint(
     num_inference_steps,
     guidance_scale,
 ):
-    print(f"Input image type: {type(image)}")
-    print(f"Mask image type: {type(mask)}")
-
     # Free memory after loading
     if device == "cuda":
         torch.cuda.empty_cache()
@@ -333,11 +330,13 @@ def generate_mask(input_image, mask_grow_pixels):
     image = load_image_and_resize(input_image, TARGET_WIDTH, TARGET_HEIGHT)
     processor, segmentation_model = load_segmentation_model()
     mask = generate_clothing_mask(segmentation_model, processor, image)
+
+    # Generate a unique output path if the file exists
+    output_path = get_unique_output_path(MASK_OUTPUT_PATH)
+
     mask_path, mask = save_black_inverted_alpha(
-        mask, MASK_OUTPUT_PATH, mask_grow_pixels
+        mask, output_path, mask_grow_pixels
     )
-    print(f"Input image type: {type(image)}")
-    print(f"Mask image type: {type(mask)}")
 
     return mask_path, mask, image
 
