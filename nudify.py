@@ -14,19 +14,17 @@ import gradio as gr
 import os
 import numpy as np
 import cv2
-import gc
 
 # Use python 3.11 for this script
 
 # Run these once
 # pip install torch --index-url https://download.pytorch.org/whl/cu118
-# pip install diffusers transformers pillow numpy opencv-python accelerate sentencepiece peft xformers gradio gc bitdandbytes
+# pip install diffusers transformers pillow numpy opencv-python accelerate sentencepiece peft xformers gradio
 
 # ======== CONFIGURATION ========
-MASK_OUTPUT_PATH = "example_output_masks/clothes_mask_alpha_6.png"
-INPAINTED_OUTPUT_PATH = "example_output_images/nudified_output_6.png"
+MASK_OUTPUT_PATH = "output/masks/mask_output.png"
+INPAINTED_OUTPUT_PATH = "output/images/nudified_output.png"
 AVAILABLE_CHECKPOINTS = ["black-forest-labs/FLUX.1-Fill-dev"]
-CACHE_DIR = "./.cache"
 AVAILABLE_LORAS = ["None", "xey/sldr_flux_nsfw_v2-studio"]
 INVERT_SIGMAS = False
 USE_KARRAS_SIGMAS = False
@@ -40,8 +38,6 @@ SAMPLER_NAME = "Euler"  # Change this to the desired sampler
 MASK_GROW_PIXELS = 15  # Amount to grow (dilate) mask
 TARGET_WIDTH = 2048
 TARGET_HEIGHT = 2048
-LOW_RAM_MODE = False
-LOW_VRAM_MODE = False
 
 
 # ======== SAFE PRINT FUNCTION ========
@@ -245,9 +241,8 @@ def get_device():
     return device
 
 
-def load_pipeline(model, device, cache_dir, low_ram_mode, low_vram_mode):
+def load_pipeline(model, device):
     # Force minimal RAM/VRAM usage
-    gc.collect()  # Free CPU memory
     if device == "cuda":
         torch.cuda.empty_cache()  # Free GPU memory
 
@@ -259,9 +254,7 @@ def load_pipeline(model, device, cache_dir, low_ram_mode, low_vram_mode):
         pipe = FluxFillPipeline.from_pretrained(
             model,
             torch_dtype=torch_dtype,
-            cache_dir=cache_dir,
             local_files_only=True,
-            use_safetensors=low_ram_mode,  # Avoid loading unnecessary weights
             offload_folder="./offload_cache",  # ✅ Offload parts of the model to disk
         )
         print("Model loaded from local cache.")
@@ -270,25 +263,24 @@ def load_pipeline(model, device, cache_dir, low_ram_mode, low_vram_mode):
         # Download the model if not found locally
         pipe = FluxFillPipeline.from_pretrained(
             model,
-            cache_dir=cache_dir,
             torch_dtype=torch_dtype,
         )
         print("Model downloaded and saved to cache.")
     pipe.reset_device_map()
-    if device == "cuda" and low_vram_mode:
+    if device == "cuda":
         pipe.to("cuda", torch_dtype=torch.float16)  # Use fp16 precision
         pipe.enable_sequential_cpu_offload()  # Move unused layers to CPU
     elif device == "cuda" or device == "cpu":
         pipe.to(device)
 
-    if low_ram_mode:
+    # if low_ram_mode:
         # Additional optimizations
-        pipe.vae.enable_slicing()
-        pipe.vae.enable_tiling()
-        pipe.enable_vae_slicing()
-        pipe.enable_attention_slicing()
+        # pipe.vae.enable_slicing()
+        # pipe.vae.enable_tiling()
+        # pipe.enable_vae_slicing()
+        # pipe.enable_attention_slicing()
 
-    if device == "cuda" and low_vram_mode:
+    if device == "cuda":
         pipe.enable_xformers_memory_efficient_attention()  # ✅ Requires `pip install xformers`
 
     safe_print(f"FluxFillPipeline loaded on {device}.")
@@ -309,7 +301,6 @@ def inpaint(
     print(f"Mask image type: {type(mask)}")
 
     # Free memory after loading
-    gc.collect()
     if device == "cuda":
         torch.cuda.empty_cache()
 
@@ -342,7 +333,9 @@ def generate_mask(input_image, mask_grow_pixels):
     image = load_image_and_resize(input_image, TARGET_WIDTH, TARGET_HEIGHT)
     processor, segmentation_model = load_segmentation_model()
     mask = generate_clothing_mask(segmentation_model, processor, image)
-    mask_path, mask = save_black_inverted_alpha(mask, MASK_OUTPUT_PATH, mask_grow_pixels)
+    mask_path, mask = save_black_inverted_alpha(
+        mask, MASK_OUTPUT_PATH, mask_grow_pixels
+    )
     print(f"Input image type: {type(image)}")
     print(f"Mask image type: {type(mask)}")
 
@@ -367,9 +360,7 @@ def process_image(
     try:
         device = get_device()
 
-        pipe = load_pipeline(
-            checkpoint_model, device, CACHE_DIR, LOW_RAM_MODE, LOW_VRAM_MODE
-        )
+        pipe = load_pipeline(checkpoint_model, device)
 
         if lora_model != "None":
             pipe = apply_lora(pipe, lora_model)
@@ -422,7 +413,9 @@ with gr.Blocks() as app:
         with gr.Column():
             image_input = gr.Image(type="pil", label="Upload Image", height=320)
             submit_button = gr.Button("Submit", elem_id="submit_button")
-            prompt_input = gr.Textbox(value=PROMPT, placeholder="Prompt", label="Prompt")
+            prompt_input = gr.Textbox(
+                value=PROMPT, placeholder="Prompt", label="Prompt"
+            )
             checkpoint_input = gr.Dropdown(
                 choices=AVAILABLE_CHECKPOINTS,
                 value=AVAILABLE_CHECKPOINTS[0],
@@ -450,14 +443,20 @@ with gr.Blocks() as app:
             use_beta_sigmas_input = gr.Checkbox(
                 value=USE_BETA_SIGMAS, label="Use Beta Sigmas"
             )
-            invert_sigmas_input = gr.Checkbox(value=INVERT_SIGMAS, label="Invert Sigmas")
+            invert_sigmas_input = gr.Checkbox(
+                value=INVERT_SIGMAS, label="Invert Sigmas"
+            )
 
             mask = gr.State()  # Stores intermediate data
             image = gr.State()  # Stores intermediate data
 
         with gr.Column():
-            mask_output = gr.Image(label="Generated Mask", elem_id="mask_output", height=320)
-            final_output = gr.Image(label="Final Image", elem_id="final_output", height=320)
+            mask_output = gr.Image(
+                label="Generated Mask", elem_id="mask_output", height=320
+            )
+            final_output = gr.Image(
+                label="Final Image", elem_id="final_output", height=320
+            )
 
     submit_button.click(
         fn=generate_mask,
@@ -495,6 +494,5 @@ if __name__ == "__main__":
         server_port=7861,
         debug=True,
         show_api=False,
-        inbrowser=True,
     )
     print("Gradio app is running and ready to use at http://127.0.0.1:7860")
