@@ -404,33 +404,68 @@ def process_image(
 
 
 # Define Gradio UI
-iface = gr.Interface(
-    fn=process_image,
-    inputs=[
-        gr.Image(type="pil", label="Upload Image"),
-        gr.Textbox(value=PROMPT, placeholder="Prompt", label="Prompt"),
-        gr.Dropdown(
-            AVAILABLE_CHECKPOINTS,
+with gr.Blocks() as app:
+    gr.Markdown("# Fully Configurable Hugging Face Inpainting")
+    gr.Markdown(
+        "## Select a checkpoint and LoRA from Hugging Face and apply inpainting."
+    )
+
+    with gr.Row():
+        image_input = gr.Image(type="pil", label="Upload Image", height=320)
+        prompt_input = gr.Textbox(value=PROMPT, placeholder="Prompt", label="Prompt")
+        checkpoint_input = gr.Dropdown(
+            choices=AVAILABLE_CHECKPOINTS,
             value=AVAILABLE_CHECKPOINTS[0],
             label="Checkpoint Model",
-        ),
-        gr.Dropdown(AVAILABLE_LORAS, value=AVAILABLE_LORAS[1], label="LoRA Model"),
-        gr.Slider(5, 50, value=25, step=1, label="Inference Steps"),
-        gr.Slider(1.0, 15.0, value=7.5, step=0.5, label="Guidance Scale"),
-        gr.Slider(0, 50, value=MASK_GROW_PIXELS, step=1, label="Mask Growth (px)"),
-        gr.Dropdown(["Euler", "DPM++ 2M"], value=SAMPLER_NAME, label="Sampler Type"),
-        gr.Checkbox(value=USE_KARRAS_SIGMAS, label="Use Karras Sigmas"),
-        gr.Checkbox(value=USE_EXPONENTIAL_SIGMAS, label="Use Exponential Sigmas"),
-        gr.Checkbox(value=USE_BETA_SIGMAS, label="Use Beta Sigmas"),
-        gr.Checkbox(value=INVERT_SIGMAS, label="Invert Sigmas"),
-    ],
-    outputs=[
-        gr.Image(type="pil", label="Processed Mask"),
-        gr.Image(type="pil", label="Processed Image"),
-    ],
-    title="Fully Configurable Hugging Face Inpainting",
-    description="Select a checkpoint and LoRA from Hugging Face and apply inpainting.",
-)
+        )
+        lora_input = gr.Dropdown(
+            choices=AVAILABLE_LORAS, value=AVAILABLE_LORAS[1], label="LoRA Model"
+        )
+        steps_input = gr.Slider(5, 50, value=25, step=1, label="Inference Steps")
+        guidance_input = gr.Slider(
+            1.0, 15.0, value=7.5, step=0.5, label="Guidance Scale"
+        )
+        mask_grow_pixels_input = gr.Slider(
+            0, 50, value=MASK_GROW_PIXELS, step=1, label="Mask Growth (px)"
+        )
+        sampler_input = gr.Dropdown(
+            choices=["Euler", "DPM++ 2M"], value=SAMPLER_NAME, label="Sampler Type"
+        )
+        use_karras_sigmas_input = gr.Checkbox(
+            value=USE_KARRAS_SIGMAS, label="Use Karras Sigmas"
+        )
+        use_exponential_sigmas_input = gr.Checkbox(
+            value=USE_EXPONENTIAL_SIGMAS, label="Use Exponential Sigmas"
+        )
+        use_beta_sigmas_input = gr.Checkbox(
+            value=USE_BETA_SIGMAS, label="Use Beta Sigmas"
+        )
+        invert_sigmas_input = gr.Checkbox(value=INVERT_SIGMAS, label="Invert Sigmas")
+
+        submit_button = gr.Button("Submit", elem_id="submit_button")
+
+    with gr.Row():
+        mask_output = gr.Image(label="Generated Mask", elem_id="mask_output")
+        final_output = gr.Image(label="Final Image", elem_id="final_output")
+
+    submit_button.click(
+        fn=process_image,
+        inputs=[
+            image_input,
+            prompt_input,
+            checkpoint_input,
+            lora_input,
+            steps_input,
+            guidance_input,
+            mask_grow_pixels_input,
+            sampler_input,
+            use_karras_sigmas_input,
+            use_exponential_sigmas_input,
+            use_beta_sigmas_input,
+            invert_sigmas_input,
+        ],
+        outputs=[mask_output, final_output],
+    )
 
 if __name__ == "__main__":
-    iface.launch(server_name="0.0.0.0", server_port=7860, debug=True)
+    app.launch(server_name="127.0.0.1", server_port=7860, debug=True)
