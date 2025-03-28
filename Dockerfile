@@ -33,8 +33,8 @@ RUN pip install --no-cache-dir \
 # Set working directory
 WORKDIR /app
 
-# Copy files
-COPY . /app
+# Clone the repository
+RUN git clone https://github.com/gabriel20xx/PictureInpaint.git .
 
 # Expose Gradio port
 EXPOSE 7860
