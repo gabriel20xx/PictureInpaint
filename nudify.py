@@ -33,7 +33,7 @@ USE_KARRAS_SIGMAS = False
 USE_EXPONENTIAL_SIGMAS = False
 USE_BETA_SIGMAS = True
 PROMPT = "naked body, realistic skin texture, no clothes, nude, no bra, no top, no panties, no pants, no shorts. \
-    Remove the cloth from the image."
+Remove the cloth from the image."
 NUM_INFERENCE_STEPS = 25
 GUIDANCE_SCALE = 7.5  # Default guidance scale (adjustable)
 SAMPLER_NAME = "Euler"  # Change this to the desired sampler
@@ -41,7 +41,7 @@ MASK_GROW_PIXELS = 15  # Amount to grow (dilate) mask
 TARGET_WIDTH = 2048
 TARGET_HEIGHT = 2048
 LOW_RAM_MODE = False
-LOW_VRAM_MODE = True
+LOW_VRAM_MODE = False
 
 
 # ======== SAFE PRINT FUNCTION ========
@@ -167,7 +167,7 @@ def save_black_inverted_alpha(clothes_mask, output_path, mask_grow_pixels=15):
     # Save as grayscale PNG
     Image.fromarray(mask).save(output_path)
     safe_print(f"Mask saved: {output_path}")
-    return output_path
+    return output_path, mask
 
 
 # ======== FUNCTION TO SELECT SAMPLER ========
@@ -305,6 +305,9 @@ def inpaint(
     num_inference_steps,
     guidance_scale,
 ):
+    print(f"Input image type: {type(image)}")
+    print(f"Mask image type: {type(mask)}")
+
     # Free memory after loading
     gc.collect()
     if device == "cuda":
@@ -339,8 +342,11 @@ def generate_mask(input_image, mask_grow_pixels):
     image = load_image_and_resize(input_image, TARGET_WIDTH, TARGET_HEIGHT)
     processor, segmentation_model = load_segmentation_model()
     mask = generate_clothing_mask(segmentation_model, processor, image)
-    mask_path = save_black_inverted_alpha(mask, MASK_OUTPUT_PATH, mask_grow_pixels)
-    return mask_path, mask_path, image
+    mask_path, mask = save_black_inverted_alpha(mask, MASK_OUTPUT_PATH, mask_grow_pixels)
+    print(f"Input image type: {type(image)}")
+    print(f"Mask image type: {type(mask)}")
+
+    return mask_path, mask, image
 
 
 # ======== MAIN FUNCTION ========
@@ -377,9 +383,18 @@ def process_image(
             use_beta_sigmas,
         )
 
+        if isinstance(image, np.ndarray):  # If stored as NumPy array
+            img = Image.fromarray(image.astype(np.uint8))
+        elif isinstance(image, str):  # If stored as file path
+            img = Image.open(image)
+        elif isinstance(image, Image.Image):  # Already PIL Image
+            img = image
+        else:
+            raise ValueError("Unsupported image format received.")
+
         # Retry inpainting process indefinitely with guidance scale
         result = inpaint(
-            image,
+            img,
             mask,
             pipe,
             device,
@@ -403,46 +418,46 @@ with gr.Blocks() as app:
     gr.Markdown(
         "## Select a checkpoint and LoRA from Hugging Face and apply inpainting."
     )
+    with gr.Row():
+        with gr.Column():
+            image_input = gr.Image(type="pil", label="Upload Image", height=320)
+            submit_button = gr.Button("Submit", elem_id="submit_button")
+            prompt_input = gr.Textbox(value=PROMPT, placeholder="Prompt", label="Prompt")
+            checkpoint_input = gr.Dropdown(
+                choices=AVAILABLE_CHECKPOINTS,
+                value=AVAILABLE_CHECKPOINTS[0],
+                label="Checkpoint Model",
+            )
+            lora_input = gr.Dropdown(
+                choices=AVAILABLE_LORAS, value=AVAILABLE_LORAS[1], label="LoRA Model"
+            )
+            steps_input = gr.Slider(5, 50, value=25, step=1, label="Inference Steps")
+            guidance_input = gr.Slider(
+                1.0, 15.0, value=7.5, step=0.5, label="Guidance Scale"
+            )
+            mask_grow_pixels_input = gr.Slider(
+                0, 50, value=MASK_GROW_PIXELS, step=1, label="Mask Growth (px)"
+            )
+            sampler_input = gr.Dropdown(
+                choices=["Euler", "DPM++ 2M"], value=SAMPLER_NAME, label="Sampler Type"
+            )
+            use_karras_sigmas_input = gr.Checkbox(
+                value=USE_KARRAS_SIGMAS, label="Use Karras Sigmas"
+            )
+            use_exponential_sigmas_input = gr.Checkbox(
+                value=USE_EXPONENTIAL_SIGMAS, label="Use Exponential Sigmas"
+            )
+            use_beta_sigmas_input = gr.Checkbox(
+                value=USE_BETA_SIGMAS, label="Use Beta Sigmas"
+            )
+            invert_sigmas_input = gr.Checkbox(value=INVERT_SIGMAS, label="Invert Sigmas")
 
-    with gr.Column():
-        image_input = gr.Image(type="pil", label="Upload Image", height=320)
-        submit_button = gr.Button("Submit", elem_id="submit_button")
-        prompt_input = gr.Textbox(value=PROMPT, placeholder="Prompt", label="Prompt")
-        checkpoint_input = gr.Dropdown(
-            choices=AVAILABLE_CHECKPOINTS,
-            value=AVAILABLE_CHECKPOINTS[0],
-            label="Checkpoint Model",
-        )
-        lora_input = gr.Dropdown(
-            choices=AVAILABLE_LORAS, value=AVAILABLE_LORAS[1], label="LoRA Model"
-        )
-        steps_input = gr.Slider(5, 50, value=25, step=1, label="Inference Steps")
-        guidance_input = gr.Slider(
-            1.0, 15.0, value=7.5, step=0.5, label="Guidance Scale"
-        )
-        mask_grow_pixels_input = gr.Slider(
-            0, 50, value=MASK_GROW_PIXELS, step=1, label="Mask Growth (px)"
-        )
-        sampler_input = gr.Dropdown(
-            choices=["Euler", "DPM++ 2M"], value=SAMPLER_NAME, label="Sampler Type"
-        )
-        use_karras_sigmas_input = gr.Checkbox(
-            value=USE_KARRAS_SIGMAS, label="Use Karras Sigmas"
-        )
-        use_exponential_sigmas_input = gr.Checkbox(
-            value=USE_EXPONENTIAL_SIGMAS, label="Use Exponential Sigmas"
-        )
-        use_beta_sigmas_input = gr.Checkbox(
-            value=USE_BETA_SIGMAS, label="Use Beta Sigmas"
-        )
-        invert_sigmas_input = gr.Checkbox(value=INVERT_SIGMAS, label="Invert Sigmas")
+            mask = gr.State()  # Stores intermediate data
+            image = gr.State()  # Stores intermediate data
 
-        mask = gr.State()  # Stores intermediate data
-        image = gr.State()  # Stores intermediate data
-
-    with gr.Column():
-        mask_output = gr.Image(label="Generated Mask", elem_id="mask_output", height=320)
-        final_output = gr.Image(label="Final Image", elem_id="final_output", height=320)
+        with gr.Column():
+            mask_output = gr.Image(label="Generated Mask", elem_id="mask_output", height=320)
+            final_output = gr.Image(label="Final Image", elem_id="final_output", height=320)
 
     submit_button.click(
         fn=generate_mask,
