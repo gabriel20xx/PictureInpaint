@@ -23,7 +23,7 @@ RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1
 RUN python3 -m pip install --upgrade pip
 
 # Install PyTorch with CUDA 11.8 support
-RUN pip install torch==2.1.0+cu118 torchvision==0.15.2+cu118 torchaudio==2.1.0 --extra-index-url https://download.pytorch.org/whl/cuda/11.8
+RUN pip install torch==2.1.0+cu118 --index-url https://download.pytorch.org/whl/cu118
 
 # Install dependencies
 RUN pip install --no-cache-dir \
