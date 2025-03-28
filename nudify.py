@@ -334,15 +334,24 @@ def save_result(result, image, output_path):
     safe_print(f"Inpainting completed. Output saved as '{output_path}'.")
 
 
+def generate_mask(input_image, mask_grow_pixels):
+    safe_print("Starting...")
+    image = load_image_and_resize(input_image, TARGET_WIDTH, TARGET_HEIGHT)
+    processor, segmentation_model = load_segmentation_model()
+    mask = generate_clothing_mask(segmentation_model, processor, image)
+    mask_path = save_black_inverted_alpha(mask, MASK_OUTPUT_PATH, mask_grow_pixels)
+    return mask_path, mask_path, image
+
+
 # ======== MAIN FUNCTION ========
 def process_image(
-    input_image,
+    image,
+    mask,
     prompt,
     checkpoint_model,
     lora_model,
     num_inference_steps,
     guidance_scale,
-    mask_grow_pixels,
     sampler_name,
     use_karras_sigmas,
     use_exponential_sigmas,
@@ -350,12 +359,6 @@ def process_image(
     invert_sigmas,
 ):
     try:
-        safe_print("Starting...")
-        image = load_image_and_resize(input_image, TARGET_WIDTH, TARGET_HEIGHT)
-        processor, segmentation_model = load_segmentation_model()
-        mask = generate_clothing_mask(segmentation_model, processor, image)
-        mask_path = save_black_inverted_alpha(mask, MASK_OUTPUT_PATH, mask_grow_pixels)
-
         inpaint_model = checkpoint_model
 
         device = get_device()
@@ -391,7 +394,7 @@ def process_image(
         output_path = get_unique_output_path(INPAINTED_OUTPUT_PATH)
 
         save_result(result, image, output_path)
-        return mask_path, output_path
+        return output_path
     except Exception as e:
         safe_print(f"Error: {e}")
 
@@ -403,8 +406,9 @@ with gr.Blocks() as app:
         "## Select a checkpoint and LoRA from Hugging Face and apply inpainting."
     )
 
-    with gr.Row():
+    with gr.Column():
         image_input = gr.Image(type="pil", label="Upload Image", height=320)
+        submit_button = gr.Button("Submit", elem_id="submit_button")
         prompt_input = gr.Textbox(value=PROMPT, placeholder="Prompt", label="Prompt")
         checkpoint_input = gr.Dropdown(
             choices=AVAILABLE_CHECKPOINTS,
@@ -435,29 +439,40 @@ with gr.Blocks() as app:
         )
         invert_sigmas_input = gr.Checkbox(value=INVERT_SIGMAS, label="Invert Sigmas")
 
-        submit_button = gr.Button("Submit", elem_id="submit_button")
+        mask = gr.State()  # Stores intermediate data
+        image = gr.State()  # Stores intermediate data
 
-    with gr.Row():
+    with gr.Column():
         mask_output = gr.Image(label="Generated Mask", elem_id="mask_output")
         final_output = gr.Image(label="Final Image", elem_id="final_output")
 
     submit_button.click(
-        fn=process_image,
+        fn=generate_mask,
         inputs=[
             image_input,
+            mask_grow_pixels_input,
+        ],
+        outputs=[mask_output, mask, image],
+    )
+
+    # Step 2: Generate second image using stored value
+    mask_output.change(
+        process_image,
+        inputs=[
+            image,
+            mask,
             prompt_input,
             checkpoint_input,
             lora_input,
             steps_input,
             guidance_input,
-            mask_grow_pixels_input,
             sampler_input,
             use_karras_sigmas_input,
             use_exponential_sigmas_input,
             use_beta_sigmas_input,
             invert_sigmas_input,
         ],
-        outputs=[mask_output, final_output],
+        outputs=final_output,
     )
 
 
