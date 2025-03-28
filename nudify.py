@@ -25,16 +25,10 @@ import io
 # pip install diffusers transformers pillow numpy opencv-python accelerate sentencepiece peft xformers gradio gc bitdandbytes
 
 # ======== CONFIGURATION ========
-INPUT_IMAGE_PATH = "example_input_images/input_image_6.jpg"
 MASK_OUTPUT_PATH = "example_output_masks/clothes_mask_alpha_6.png"
 INPAINTED_OUTPUT_PATH = "example_output_images/nudified_output_6.png"
-USE_LOCAL_MODEL = True
-LOCAL_FLUX_MODEL_PATH = "models/converted_model"  # Path to local model folder
-REMOTE_FLUX_MODEL = "black-forest-labs/FLUX.1-Fill-dev"
 AVAILABLE_CHECKPOINTS = ["black-forest-labs/FLUX.1-Fill-dev"]
 CACHE_DIR = "./.cache"
-USE_LORA = True
-REMOTE_LORA = "xey/sldr_flux_nsfw_v2-studio"
 AVAILABLE_LORAS = ["None", "xey/sldr_flux_nsfw_v2-studio"]
 INVERT_SIGMAS = False
 USE_KARRAS_SIGMAS = False
@@ -347,7 +341,7 @@ def save_result(result, image, output_path):
 
 
 # ======== MAIN FUNCTION ========
-def main(
+def process_image(
     input_image,
     prompt,
     checkpoint_model,
@@ -359,13 +353,15 @@ def main(
     use_karras_sigmas,
     use_exponential_sigmas,
     use_beta_sigmas,
-    invert_sigmas
+    invert_sigmas,
 ):
     try:
+        safe_print("Starting...")
         image = load_image_and_resize(input_image, TARGET_WIDTH, TARGET_HEIGHT)
         processor, segmentation_model = load_segmentation_model()
         mask = generate_clothing_mask(segmentation_model, processor, image)
-        mask = save_black_inverted_alpha(mask, MASK_OUTPUT_PATH, MASK_GROW_PIXELS)
+        mask = save_black_inverted_alpha(mask, MASK_OUTPUT_PATH, mask_grow_pixels)
+        yield mask, None
 
         inpaint_model = checkpoint_model
 
@@ -402,22 +398,23 @@ def main(
         output_path = get_unique_output_path(INPAINTED_OUTPUT_PATH)
 
         save_result(result, image, output_path)
+        yield mask, result
     except Exception as e:
         safe_print(f"❌ Error: {e}")
 
 
 # Define Gradio UI
 iface = gr.Interface(
-    fn=main,
+    fn=process_image,
     inputs=[
         gr.Image(type="pil", label="Upload Image"),
-        gr.Textbox(value="", placeholder="Prompt", label="Prompt"),
+        gr.Textbox(value=PROMPT, placeholder="Prompt", label="Prompt"),
         gr.Dropdown(
             AVAILABLE_CHECKPOINTS,
             value=AVAILABLE_CHECKPOINTS[0],
             label="Checkpoint Model",
         ),
-        gr.Dropdown(AVAILABLE_LORAS, value="None", label="LoRA Model"),
+        gr.Dropdown(AVAILABLE_LORAS, value=AVAILABLE_LORAS[1], label="LoRA Model"),
         gr.Slider(5, 50, value=25, step=1, label="Inference Steps"),
         gr.Slider(1.0, 15.0, value=7.5, step=0.5, label="Guidance Scale"),
         gr.Slider(0, 50, value=MASK_GROW_PIXELS, step=1, label="Mask Growth (px)"),
@@ -427,10 +424,13 @@ iface = gr.Interface(
         gr.Checkbox(value=USE_BETA_SIGMAS, label="Use Beta Sigmas"),
         gr.Checkbox(value=INVERT_SIGMAS, label="Invert Sigmas"),
     ],
-    outputs=gr.Image(type="pil", label="Processed Image"),
+    outputs=[
+        gr.Image(type="pil", label="Processed Mask"),
+        gr.Image(type="pil", label="Processed Image"),
+    ],
     title="Fully Configurable Hugging Face Inpainting",
     description="Select a checkpoint and LoRA from Hugging Face and apply inpainting.",
 )
 
 if __name__ == "__main__":
-    iface.launch(server_name="0.0.0.0", server_port=7860)
+    iface.launch(server_name="0.0.0.0", server_port=7860, debug=True)
