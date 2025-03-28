@@ -22,18 +22,13 @@ RUN ln -s /usr/bin/python3.11 /usr/bin/python
 # Upgrade pip
 RUN python3 -m pip install --upgrade pip
 
-# Install PyTorch with CUDA 11.8
-RUN pip install torch --index-url https://download.pytorch.org/whl/cu118
-
-# Install dependencies
-RUN pip install diffusers transformers pillow numpy opencv-python accelerate sentencepiece peft xformers gradio
-
 # Set working directory
 WORKDIR /app
 
 # Clone the repository
 RUN git clone https://github.com/gabriel20xx/PictureInpaint.git .
 
+RUN pip install -r requirements.txt
 # Expose Gradio port
 EXPOSE 7860
 

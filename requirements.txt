@@ -1,0 +1,11 @@
+torch
+diffusers
+transformers
+pillow
+numpy
+opencv-python
+accelerate
+sentencepiece
+peft
+xformers
+gradio
