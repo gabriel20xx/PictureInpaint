@@ -359,12 +359,10 @@ def process_image(
     invert_sigmas,
 ):
     try:
-        inpaint_model = checkpoint_model
-
         device = get_device()
 
         pipe = load_pipeline(
-            inpaint_model, device, CACHE_DIR, LOW_RAM_MODE, LOW_VRAM_MODE
+            checkpoint_model, device, CACHE_DIR, LOW_RAM_MODE, LOW_VRAM_MODE
         )
 
         if lora_model != "None":
@@ -443,8 +441,8 @@ with gr.Blocks() as app:
         image = gr.State()  # Stores intermediate data
 
     with gr.Column():
-        mask_output = gr.Image(label="Generated Mask", elem_id="mask_output")
-        final_output = gr.Image(label="Final Image", elem_id="final_output")
+        mask_output = gr.Image(label="Generated Mask", elem_id="mask_output", height=320)
+        final_output = gr.Image(label="Final Image", elem_id="final_output", height=320)
 
     submit_button.click(
         fn=generate_mask,
