@@ -22,7 +22,7 @@ WORKDIR /app
 RUN git clone https://github.com/gabriel20xx/PictureInpaint.git .
 
 # Make startup script executable
-RUN chmod +x /app/startup.sh
+RUN chmod +x startup.sh
 
 # Expose Gradio port
 EXPOSE 7860
