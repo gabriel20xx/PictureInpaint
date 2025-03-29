@@ -344,8 +344,7 @@ def generate_mask(input_image, mask_grow_pixels):
     # Construct full output path using os.path
     output_path = os.path.join(output_dir, filename)
 
-    mask_path, mask = save_black_inverted_alpha(mask, output_path,
-                                                mask_grow_pixels)
+    mask_path, mask = save_black_inverted_alpha(mask, output_path, mask_grow_pixels)
 
     return mask_path, mask, image
 
@@ -407,7 +406,9 @@ def process_image(
         output_dir = "output/mask"
 
         # Ensure the directory exists
-        os.makedirs(output_dir, exist_ok=True)  # Creates directories if they don't exist
+        os.makedirs(
+            output_dir, exist_ok=True
+        )  # Creates directories if they don't exist
 
         # Construct full output path using os.path
         output_path = os.path.join(output_dir, filename)
