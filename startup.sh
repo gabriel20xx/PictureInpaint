@@ -1,5 +1,6 @@
 #!/bin/bash
 
+git reset --hard
 git fetch
 git pull origin master
 
