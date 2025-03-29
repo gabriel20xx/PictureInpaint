@@ -1,7 +1,11 @@
 #!/bin/bash
 
+# Git stuff
+echo "Resetting git"
 git reset --hard
+echo "Fetching repo"
 git fetch
+echo "Pulling changes"
 git pull origin master
 
 # Install dependencies from requirements.txt
