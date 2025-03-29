@@ -15,8 +15,8 @@ echo "Installing dependencies from requirements.txt..."
 pip3 install -r requirements.txt
 
 # Make file executable
-echo "Making nudify.py executable"
-chmod +x nudify.py
+echo "Making everything read, write and execute"
+chmod -R 777 /app
 
 # Run the Python script nudify.py
 echo "Running nudify.py..."
