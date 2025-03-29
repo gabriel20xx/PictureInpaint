@@ -112,7 +112,8 @@ def load_segmentation_model():
 
 
 # ======== GENERATE CLOTHES MASK ========
-def generate_clothing_mask(device, model, processor, image):
+def generate_clothing_mask(model, processor, image):
+    device = torch.device("cpu")  # Force CPU inference
     inputs = processor(images=image, return_tensors="pt").to(device)
 
     outputs = model(**inputs)
@@ -239,7 +240,9 @@ def get_device():
     return device
 
 
-def load_pipeline(model, device):
+def load_pipeline(model):
+    device = get_device()
+
     # Force minimal RAM/VRAM usage
     if device == "cuda":
         torch.cuda.empty_cache()  # Free GPU memory
@@ -284,11 +287,12 @@ def inpaint(
     image,
     mask,
     pipe,
-    device,
     prompt,
     num_inference_steps,
     guidance_scale,
 ):
+    device = get_device()
+
     # Free memory after loading
     if device == "cuda":
         torch.cuda.empty_cache()
@@ -321,8 +325,7 @@ def generate_mask(input_image, mask_grow_pixels):
     safe_print("Starting...")
     image = load_image_and_resize(input_image, TARGET_WIDTH, TARGET_HEIGHT)
     processor, segmentation_model = load_segmentation_model()
-    device = get_device()
-    mask = generate_clothing_mask(device, segmentation_model, processor, image)
+    mask = generate_clothing_mask(segmentation_model, processor, image)
 
     # Generate a unique output path if the file exists
     output_path = get_unique_output_path(MASK_OUTPUT_PATH)
@@ -331,12 +334,11 @@ def generate_mask(input_image, mask_grow_pixels):
         mask, output_path, mask_grow_pixels
     )
 
-    return device, mask_path, mask, image
+    return mask_path, mask, image
 
 
 # ======== MAIN FUNCTION ========
 def process_image(
-    device,
     image,
     mask,
     prompt,
@@ -351,7 +353,7 @@ def process_image(
     invert_sigmas,
 ):
     try:
-        pipe = load_pipeline(checkpoint_model, device)
+        pipe = load_pipeline(checkpoint_model)
 
         if lora_model != "None":
             pipe = apply_lora(pipe, lora_model)
@@ -379,7 +381,6 @@ def process_image(
             img,
             mask,
             pipe,
-            device,
             prompt,
             num_inference_steps,
             guidance_scale,
@@ -400,10 +401,18 @@ with gr.Blocks() as app:
     gr.Markdown(
         "## Select a checkpoint and LoRA from Hugging Face and apply inpainting."
     )
+    submit_button = gr.Button("Submit", elem_id="submit_button")
     with gr.Row():
         with gr.Column():
-            image_input = gr.Image(type="pil", label="Upload Image", height=320)
-            submit_button = gr.Button("Submit", elem_id="submit_button")
+            image_input = gr.Image(type="pil", label="Upload Image", height=400)
+            mask_output = gr.Image(
+                label="Generated Mask", elem_id="mask_output", height=400
+            )
+            final_output = gr.Image(
+                label="Final Image", elem_id="final_output", height=400
+            )
+
+        with gr.Column():
             prompt_input = gr.Textbox(
                 value=PROMPT, placeholder="Prompt", label="Prompt"
             )
@@ -440,15 +449,6 @@ with gr.Blocks() as app:
 
             mask = gr.State()  # Stores intermediate data
             image = gr.State()  # Stores intermediate data
-            device = gr.State()
-
-        with gr.Column():
-            mask_output = gr.Image(
-                label="Generated Mask", elem_id="mask_output", height=320
-            )
-            final_output = gr.Image(
-                label="Final Image", elem_id="final_output", height=320
-            )
 
     submit_button.click(
         fn=generate_mask,
@@ -456,14 +456,13 @@ with gr.Blocks() as app:
             image_input,
             mask_grow_pixels_input,
         ],
-        outputs=[device, mask_output, mask, image],
+        outputs=[mask_output, mask, image],
     )
 
     # Step 2: Generate second image using stored value
     mask_output.change(
         process_image,
         inputs=[
-            device,
             image,
             mask,
             prompt_input,
