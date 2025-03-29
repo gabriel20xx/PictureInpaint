@@ -14,6 +14,10 @@ pip3 install torch==2.1.0+cu118 xformers==0.0.29.post2 --index-url https://downl
 echo "Installing dependencies from requirements.txt..."
 pip3 install -r requirements.txt
 
+# Make file executable
+echo "Making nudify.py executable"
+chmod +x nudify.py
+
 # Run the Python script nudify.py
 echo "Running nudify.py..."
 python3 nudify.py
