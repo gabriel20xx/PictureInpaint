@@ -6,7 +6,7 @@ sudo apt update
 
 # Install dependencies from requirements.txt
 echo "Installing dependencies from requirements.txt..."
-pip3 install -r requirements.txt -f --index-url https://download.pytorch.org/whl/cu118
+pip3 install -r requirements.txt --index-url https://download.pytorch.org/whl/cu118
 
 # Run the Python script nudify.py
 echo "Running nudify.py..."
