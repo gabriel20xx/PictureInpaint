@@ -11,14 +11,21 @@ from transformers import (
 from PIL import Image
 import gradio as gr
 import os
+import xformers
 import numpy as np
 import cv2
 
 # Use python 3.11 for this script
 
 # Run these once
-# pip install torch --index-url https://download.pytorch.org/whl/cu118
-# pip install diffusers transformers pillow numpy opencv-python accelerate sentencepiece peft xformers gradio
+# python -m venv fluxfill
+# Activate venv on CMD: fluxfill\Scripts\activate
+# Activate venv on PS: fluxfill\Scripts\Activate.ps1
+# Activate venv on Linux: source fluxfill/bin/activate
+# pip install torch==2.1.0 torchvision==0.15.2 torchaudio==2.0.2 xformers --index-url https://download.pytorch.org/whl/cu118
+# pip install diffusers transformers pillow numpy<2 opencv-python accelerate sentencepiece peft protobuf gradio triton
+# pip install https://github.com/bycloud-AI/DiffBIR-Windows/raw/refs/heads/main/triton-2.0.0-cp310-cp310-win_amd64.whl
+# set PYTORCH_CUDA_ALLOC_CONF=expandable_segments=True,max_split_size_mb=64,garbage_collection_threshold=0.98
 
 # ======== CONFIGURATION ========
 MASK_OUTPUT_PATH = "output/masks/mask_output.png"
@@ -45,6 +52,14 @@ def safe_print(msg):
         print(msg)
     except UnicodeEncodeError:
         print(msg.encode("ascii", "ignore").decode())
+
+
+def get_system_information():
+    print("CUDA available:", torch.cuda.is_available())
+    print("CUDA version:", torch.version.cuda)
+    print("Device:", torch.cuda.get_device_name(0))  # Should show GTX 1080
+    print("xFormers version:", xformers.__version__)
+    print("Total memory:", torch.cuda.get_device_properties(0).total_memory)
 
 
 # Function to avoid overwriting existing files by adding a suffix
@@ -224,6 +239,9 @@ def apply_scheduler(
 
 
 def get_device():
+    print("CUDA available:", torch.cuda.is_available())
+    print(torch.cuda.get_device_name(0))  # Should show GTX 1080
+    print("xFormers installed:", xformers.__version__)
     # Load model with optimized settings
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -268,15 +286,11 @@ def load_pipeline(model):
             torch_dtype=torch_dtype,
         )
         print("Model downloaded and saved to cache.")
-    pipe.reset_device_map()
-    if device == "cuda":
-        pipe.to("cuda", torch_dtype=torch.float16)  # Use fp16 precision
-        pipe.enable_sequential_cpu_offload()  # Move unused layers to CPU
-    elif device == "cuda" or device == "cpu":
-        pipe.to(device)
 
+    pipe.to(device)
     if device == "cuda":
         pipe.enable_xformers_memory_efficient_attention()  # ✅ Requires `pip install xformers`
+        safe_print("Enabled xFormers optimization.")
 
     safe_print(f"FluxFillPipeline loaded on {device}.")
     return pipe
@@ -292,6 +306,7 @@ def inpaint(
     guidance_scale,
 ):
     device = get_device()
+    pipe.to(device)
 
     # Free memory after loading
     if device == "cuda":
@@ -481,9 +496,10 @@ with gr.Blocks() as app:
 
 
 if __name__ == "__main__":
+    get_system_information()
     app.launch(
         server_name="0.0.0.0",
-        server_port=7861,
+        server_port=7862,
         debug=True,
         show_api=False,
     )

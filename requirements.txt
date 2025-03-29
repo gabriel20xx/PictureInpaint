@@ -1,4 +1,6 @@
 torch
+torchvision
+torchaudio
 diffusers
 transformers
 pillow
@@ -9,3 +11,5 @@ sentencepiece
 peft
 xformers
 gradio
+protobuf
+triton

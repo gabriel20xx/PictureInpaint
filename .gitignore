@@ -1,5 +1,6 @@
 .qodo
 models
 converted_model
+fluxfill
 .cache
 .gradio
