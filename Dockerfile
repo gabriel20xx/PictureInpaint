@@ -27,5 +27,5 @@ RUN chmod +x startup.sh
 # Expose Gradio port
 EXPOSE 7860
 
-# Run the Gradio app @
+# Run the Gradio app
 CMD ["./startup.sh"]
