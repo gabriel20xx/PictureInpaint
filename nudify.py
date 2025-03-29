@@ -1,5 +1,4 @@
 import torch
-from torch import autocast
 from diffusers import (
     FluxFillPipeline,
     FlowMatchEulerDiscreteScheduler,
@@ -113,8 +112,7 @@ def load_segmentation_model():
 
 
 # ======== GENERATE CLOTHES MASK ========
-def generate_clothing_mask(model, processor, image):
-    device = torch.device("cpu")  # Force CPU inference
+def generate_clothing_mask(device, model, processor, image):
     inputs = processor(images=image, return_tensors="pt").to(device)
 
     outputs = model(**inputs)
@@ -245,6 +243,7 @@ def load_pipeline(model, device):
     # Force minimal RAM/VRAM usage
     if device == "cuda":
         torch.cuda.empty_cache()  # Free GPU memory
+        safe_print("VRAM cache cleared")
 
     torch_dtype = torch.float16 if device == "cuda" else torch.float32
 
@@ -273,13 +272,6 @@ def load_pipeline(model, device):
     elif device == "cuda" or device == "cpu":
         pipe.to(device)
 
-    # if low_ram_mode:
-        # Additional optimizations
-        # pipe.vae.enable_slicing()
-        # pipe.vae.enable_tiling()
-        # pipe.enable_vae_slicing()
-        # pipe.enable_attention_slicing()
-
     if device == "cuda":
         pipe.enable_xformers_memory_efficient_attention()  # ✅ Requires `pip install xformers`
 
@@ -300,17 +292,17 @@ def inpaint(
     # Free memory after loading
     if device == "cuda":
         torch.cuda.empty_cache()
+        safe_print("VRAM cache cleared")
 
     try:
         safe_print(f"Starting inpainting process on {device}...")
-        with autocast(str(device)):
-            result = pipe(
-                prompt=prompt,
-                image=image,
-                mask_image=mask,
-                num_inference_steps=num_inference_steps,
-                guidance_scale=guidance_scale,
-            ).images[0]
+        result = pipe(
+            prompt=prompt,
+            image=image,
+            mask_image=mask,
+            num_inference_steps=num_inference_steps,
+            guidance_scale=guidance_scale,
+        ).images[0]
 
         return result
     except Exception as e:
@@ -329,7 +321,8 @@ def generate_mask(input_image, mask_grow_pixels):
     safe_print("Starting...")
     image = load_image_and_resize(input_image, TARGET_WIDTH, TARGET_HEIGHT)
     processor, segmentation_model = load_segmentation_model()
-    mask = generate_clothing_mask(segmentation_model, processor, image)
+    device = get_device()
+    mask = generate_clothing_mask(device, segmentation_model, processor, image)
 
     # Generate a unique output path if the file exists
     output_path = get_unique_output_path(MASK_OUTPUT_PATH)
@@ -338,11 +331,12 @@ def generate_mask(input_image, mask_grow_pixels):
         mask, output_path, mask_grow_pixels
     )
 
-    return mask_path, mask, image
+    return device, mask_path, mask, image
 
 
 # ======== MAIN FUNCTION ========
 def process_image(
+    device,
     image,
     mask,
     prompt,
@@ -357,8 +351,6 @@ def process_image(
     invert_sigmas,
 ):
     try:
-        device = get_device()
-
         pipe = load_pipeline(checkpoint_model, device)
 
         if lora_model != "None":
@@ -448,6 +440,7 @@ with gr.Blocks() as app:
 
             mask = gr.State()  # Stores intermediate data
             image = gr.State()  # Stores intermediate data
+            device = gr.State()
 
         with gr.Column():
             mask_output = gr.Image(
@@ -463,13 +456,14 @@ with gr.Blocks() as app:
             image_input,
             mask_grow_pixels_input,
         ],
-        outputs=[mask_output, mask, image],
+        outputs=[device, mask_output, mask, image],
     )
 
     # Step 2: Generate second image using stored value
     mask_output.change(
         process_image,
         inputs=[
+            device,
             image,
             mask,
             prompt_input,

@@ -27,6 +27,8 @@ WORKDIR /app
 
 # Clone the repository
 RUN git clone https://github.com/gabriel20xx/PictureInpaint.git .
+RUN python3 -m pip install --upgrade torch --index-url https://download.pytorch.org/whl/cu118
+
 
 RUN pip install -r requirements.txt
 # Expose Gradio port
