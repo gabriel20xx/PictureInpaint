@@ -9,7 +9,7 @@ RUN apt update && apt install -y \
     software-properties-common \
     && add-apt-repository ppa:deadsnakes/ppa \
     && apt update && apt install -y \
-    python3.11 python3.11-venv python3.11-dev git \
+    python3.11 python3.11-venv python3.11-dev python3-pip git \
     && apt clean && rm -rf /var/lib/apt/lists/*
 
 # Set Python 3.11 as the default python3
