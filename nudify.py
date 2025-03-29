@@ -137,18 +137,17 @@ def generate_clothing_mask(model, processor, image):
 
 
 # ======== APPLY MASK GROW AND SAVE ========
-def save_black_inverted_alpha(clothes_mask, output_path, mask_grow_pixels=15):
-    mask = (clothes_mask * 255).astype(np.uint8)  # Convert 1s to 255 (white mask)
+def save_black_inverted_alpha(clothes_mask, mask_grow_pixels=15):
+    mask = (clothes_mask * 255).astype(
+        np.uint8)  # Convert 1s to 255 (white mask)
 
     dilate_size = max(5, mask_grow_pixels)  # Ensure mask grows sufficiently
     close_size = max(3, mask_grow_pixels // 3)  # Ensure minimum size of 3
 
-    dilate_kernel = cv2.getStructuringElement(
-        cv2.MORPH_ELLIPSE, (dilate_size, dilate_size)
-    )
-    close_kernel = cv2.getStructuringElement(
-        cv2.MORPH_ELLIPSE, (close_size, close_size)
-    )
+    dilate_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,
+                                              (dilate_size, dilate_size))
+    close_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,
+                                             (close_size, close_size))
 
     # --- Expand the mask slightly to remove unwanted artifacts ---
     mask = cv2.dilate(mask, dilate_kernel, iterations=1)
@@ -157,11 +156,21 @@ def save_black_inverted_alpha(clothes_mask, output_path, mask_grow_pixels=15):
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, close_kernel)
 
     # Apply a Gaussian blur for extra smoothing
-    blur_ksize = max(5, (mask_grow_pixels // 2) * 2 + 1)  # Ensure odd kernel size
+    blur_ksize = max(5,
+                     (mask_grow_pixels // 2) * 2 + 1)  # Ensure odd kernel size
     mask = cv2.GaussianBlur(mask, (blur_ksize, blur_ksize), sigmaX=0, sigmaY=0)
 
-    # Ensure the full directory path exists
-    os.makedirs(output_path, exist_ok=True)  # Works on Windows & Linux
+    # Generate timestamped filename
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    filename = f"mask_{timestamp}.png"
+
+    # Define output directory
+    output_dir = "output/masks"
+
+    os.makedirs(output_dir, exist_ok=True)  # Ensure directory exists
+
+    # Construct full output path
+    output_path = os.path.join(output_dir, filename)
 
     # Save as grayscale PNG
     Image.fromarray(mask).save(output_path)
@@ -317,19 +326,9 @@ def inpaint(
         safe_print(f"Inpainting failed. Error: {e}")
 
 
-def save_result(result, image, output_path):
+def save_result(result, image):
     # Ensure same size output
     result = result.resize(image.size)
-
-    result.save(output_path)
-    safe_print(f"Inpainting completed. Output saved as '{output_path}'.")
-
-
-def generate_mask(input_image, mask_grow_pixels):
-    safe_print("Starting...")
-    image = load_image_and_resize(input_image, TARGET_WIDTH, TARGET_HEIGHT)
-    processor, segmentation_model = load_segmentation_model()
-    mask = generate_clothing_mask(segmentation_model, processor, image)
 
     # Generate timestamped filename
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -338,13 +337,23 @@ def generate_mask(input_image, mask_grow_pixels):
     # Define output directory
     output_dir = "output/masks"
 
-    # Ensure the directory exists
-    os.makedirs(output_dir, exist_ok=True)  # Creates directories if they don't exist
+    os.makedirs(output_dir, exist_ok=True)  # Ensure directory exists
 
-    # Construct full output path using os.path
+    # Construct full output path
     output_path = os.path.join(output_dir, filename)
 
-    mask_path, mask = save_black_inverted_alpha(mask, output_path, mask_grow_pixels)
+    result.save(output_path)
+    safe_print(f"Inpainting completed. Output saved as '{output_path}'.")
+    return output_path
+
+
+def generate_mask(input_image, mask_grow_pixels):
+    safe_print("Starting...")
+    image = load_image_and_resize(input_image, TARGET_WIDTH, TARGET_HEIGHT)
+    processor, segmentation_model = load_segmentation_model()
+    mask = generate_clothing_mask(segmentation_model, processor, image)
+
+    mask_path, mask = save_black_inverted_alpha(mask, mask_grow_pixels)
 
     return mask_path, mask, image
 
@@ -398,22 +407,7 @@ def process_image(
             guidance_scale,
         )
 
-        # Generate timestamped filename
-        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        filename = f"mask_{timestamp}.png"
-
-        # Define output directory
-        output_dir = "output/mask"
-
-        # Ensure the directory exists
-        os.makedirs(
-            output_dir, exist_ok=True
-        )  # Creates directories if they don't exist
-
-        # Construct full output path using os.path
-        output_path = os.path.join(output_dir, filename)
-
-        save_result(result, image, output_path)
+        output_path = save_result(result, image)
         return output_path
     except Exception as e:
         safe_print(f"Error: {e}")
