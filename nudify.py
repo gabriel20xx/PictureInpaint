@@ -28,8 +28,10 @@ import cv2
 # set PYTORCH_CUDA_ALLOC_CONF=expandable_segments=True,max_split_size_mb=64,garbage_collection_threshold=0.98
 
 # ======== CONFIGURATION ========
-MASK_OUTPUT_PATH = "output/masks/mask_output.png"
-INPAINTED_OUTPUT_PATH = "output/images/nudified_output.png"
+MASK_OUTPUT_PATH = "output/masks"
+MASK_FILENAME = "mask_output.png"
+INPAINTED_OUTPUT_PATH = "output/images"
+OUTPUT_FILENAME = "nudified_output.png"
 AVAILABLE_CHECKPOINTS = ["black-forest-labs/FLUX.1-Fill-dev"]
 AVAILABLE_LORAS = ["None", "xey/sldr_flux_nsfw_v2-studio"]
 INVERT_SIGMAS = False
@@ -173,6 +175,9 @@ def save_black_inverted_alpha(clothes_mask, output_path, mask_grow_pixels=15):
     # Apply a Gaussian blur for extra smoothing
     blur_ksize = max(5, (mask_grow_pixels // 2) * 2 + 1)  # Ensure odd kernel size
     mask = cv2.GaussianBlur(mask, (blur_ksize, blur_ksize), sigmaX=0, sigmaY=0)
+
+    # Ensure the full directory path exists
+    os.makedirs(output_path, exist_ok=True)  # Works on Windows & Linux
 
     # Save as grayscale PNG
     Image.fromarray(mask).save(output_path)
@@ -343,7 +348,7 @@ def generate_mask(input_image, mask_grow_pixels):
     mask = generate_clothing_mask(segmentation_model, processor, image)
 
     # Generate a unique output path if the file exists
-    output_path = get_unique_output_path(MASK_OUTPUT_PATH)
+    output_path = get_unique_output_path(os.path.join(MASK_OUTPUT_PATH, MASK_FILENAME))
 
     mask_path, mask = save_black_inverted_alpha(
         mask, output_path, mask_grow_pixels
@@ -402,7 +407,7 @@ def process_image(
         )
 
         # Generate a unique output path if the file exists
-        output_path = get_unique_output_path(INPAINTED_OUTPUT_PATH)
+        output_path = get_unique_output_path(os.path.join(INPAINTED_OUTPUT_PATH, OUTPUT_FILENAME))
 
         save_result(result, image, output_path)
         return output_path
