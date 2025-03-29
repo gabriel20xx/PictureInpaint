@@ -9,6 +9,7 @@ from transformers import (
     AutoModelForSemanticSegmentation,
 )
 from PIL import Image
+from datetime import datetime
 import gradio as gr
 import os
 import xformers
@@ -62,23 +63,6 @@ def get_system_information():
     print("Device:", torch.cuda.get_device_name(0))  # Should show GTX 1080
     print("xFormers version:", xformers.__version__)
     print("Total memory:", torch.cuda.get_device_properties(0).total_memory)
-
-
-# Function to avoid overwriting existing files by adding a suffix
-def get_unique_output_path(base_path):
-    if not os.path.exists(base_path):
-        return base_path
-
-    # Add a numerical suffix to the file if it already exists
-    name, ext = os.path.splitext(base_path)
-    counter = 1
-    new_path = f"{name}_{counter}{ext}"
-
-    while os.path.exists(new_path):
-        counter += 1
-        new_path = f"{name}_{counter}{ext}"
-
-    return new_path
 
 
 # ======== LOAD INPUT IMAGE ========
@@ -347,12 +331,21 @@ def generate_mask(input_image, mask_grow_pixels):
     processor, segmentation_model = load_segmentation_model()
     mask = generate_clothing_mask(segmentation_model, processor, image)
 
-    # Generate a unique output path if the file exists
-    output_path = get_unique_output_path(os.path.join(MASK_OUTPUT_PATH, MASK_FILENAME))
+    # Generate timestamped filename
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    filename = f"mask_{timestamp}.png"
 
-    mask_path, mask = save_black_inverted_alpha(
-        mask, output_path, mask_grow_pixels
-    )
+    # Define output directory
+    output_dir = "output/masks"
+
+    # Ensure the directory exists
+    os.makedirs(output_dir, exist_ok=True)  # Creates directories if they don't exist
+
+    # Construct full output path using os.path
+    output_path = os.path.join(output_dir, filename)
+
+    mask_path, mask = save_black_inverted_alpha(mask, output_path,
+                                                mask_grow_pixels)
 
     return mask_path, mask, image
 
@@ -406,8 +399,18 @@ def process_image(
             guidance_scale,
         )
 
-        # Generate a unique output path if the file exists
-        output_path = get_unique_output_path(os.path.join(INPAINTED_OUTPUT_PATH, OUTPUT_FILENAME))
+        # Generate timestamped filename
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        filename = f"mask_{timestamp}.png"
+
+        # Define output directory
+        output_dir = "output/mask"
+
+        # Ensure the directory exists
+        os.makedirs(output_dir, exist_ok=True)  # Creates directories if they don't exist
+
+        # Construct full output path using os.path
+        output_path = os.path.join(output_dir, filename)
 
         save_result(result, image, output_path)
         return output_path
