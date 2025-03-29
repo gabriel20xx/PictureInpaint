@@ -15,20 +15,17 @@ RUN apt update && apt install -y \
 # Set Python 3.11 as the default python3
 RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1
 
-# Verify installation
-RUN python3 --version
-
 # Set working directory
 WORKDIR /app
 
 # Clone the repository
 RUN git clone https://github.com/gabriel20xx/PictureInpaint.git .
 
-# Install dependencies
-RUN pip install -r requirements.txt
+# Make startup script executable
+RUN chmod +x /app/startup.sh
 
 # Expose Gradio port
 EXPOSE 7860
 
 # Run the Gradio app
-CMD ["python3", "./nudify.py"]
+CMD ["./startup.sh"]
