@@ -4,35 +4,31 @@ FROM nvidia/cuda:11.8.0-base-ubuntu22.04
 # Set environment variable for non-interactive installation
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install dependencies
-RUN apt-get update && \
-    apt-get install -y \
-    build-essential \
-    python3.11 \
-    python3.11-dev \
-    python3-pip \
-    python3.11-venv \
-    git \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
+# Update package list and install dependencies
+RUN apt update && apt install -y \
+    software-properties-common \
+    && add-apt-repository ppa:deadsnakes/ppa \
+    && apt update && apt install -y \
+    python3.11 python3.11-venv python3.11-dev git \
+    && apt clean && rm -rf /var/lib/apt/lists/*
 
-# Ensure `python` command is available
-RUN ln -s /usr/bin/python3.11 /usr/bin/python
+# Set Python 3.11 as the default python3
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1
 
-# Upgrade pip
-RUN python3 -m pip install --upgrade pip
+# Verify installation
+RUN python3 --version
 
 # Set working directory
 WORKDIR /app
 
 # Clone the repository
 RUN git clone https://github.com/gabriel20xx/PictureInpaint.git .
-RUN python3 -m pip install --upgrade torch --index-url https://download.pytorch.org/whl/cu118
 
-
+# Install dependencies
 RUN pip install -r requirements.txt
+
 # Expose Gradio port
 EXPOSE 7860
 
 # Run the Gradio app
-CMD ["/usr/bin/python3.11", "nudify.py"]
+CMD ["python3", "./nudify.py"]
