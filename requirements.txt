@@ -8,4 +8,3 @@ sentencepiece
 peft
 gradio
 protobuf
-pytorch-triton
