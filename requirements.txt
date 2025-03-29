@@ -1,5 +1,3 @@
-torch==2.1.0+cu118
-xformers==0.0.29.post2
 diffusers
 transformers
 pillow
