@@ -12,4 +12,4 @@ sentencepiece
 peft
 gradio
 protobuf
-triton
+pytorch-triton
