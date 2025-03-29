@@ -1,5 +1,8 @@
 #!/bin/bash
 
+git fetch
+git pull origin master
+
 # Install dependencies from requirements.txt
 echo "Installing dependencies from requirements.txt..."
 pip3 install -r requirements.txt --index-url https://download.pytorch.org/whl/cu118
