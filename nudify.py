@@ -138,16 +138,17 @@ def generate_clothing_mask(model, processor, image):
 
 # ======== APPLY MASK GROW AND SAVE ========
 def save_black_inverted_alpha(clothes_mask, mask_grow_pixels=15):
-    mask = (clothes_mask * 255).astype(
-        np.uint8)  # Convert 1s to 255 (white mask)
+    mask = (clothes_mask * 255).astype(np.uint8)  # Convert 1s to 255 (white mask)
 
     dilate_size = max(5, mask_grow_pixels)  # Ensure mask grows sufficiently
     close_size = max(3, mask_grow_pixels // 3)  # Ensure minimum size of 3
 
-    dilate_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,
-                                              (dilate_size, dilate_size))
-    close_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,
-                                             (close_size, close_size))
+    dilate_kernel = cv2.getStructuringElement(
+        cv2.MORPH_ELLIPSE, (dilate_size, dilate_size)
+    )
+    close_kernel = cv2.getStructuringElement(
+        cv2.MORPH_ELLIPSE, (close_size, close_size)
+    )
 
     # --- Expand the mask slightly to remove unwanted artifacts ---
     mask = cv2.dilate(mask, dilate_kernel, iterations=1)
@@ -156,8 +157,7 @@ def save_black_inverted_alpha(clothes_mask, mask_grow_pixels=15):
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, close_kernel)
 
     # Apply a Gaussian blur for extra smoothing
-    blur_ksize = max(5,
-                     (mask_grow_pixels // 2) * 2 + 1)  # Ensure odd kernel size
+    blur_ksize = max(5, (mask_grow_pixels // 2) * 2 + 1)  # Ensure odd kernel size
     mask = cv2.GaussianBlur(mask, (blur_ksize, blur_ksize), sigmaX=0, sigmaY=0)
 
     # Generate timestamped filename
@@ -335,7 +335,7 @@ def save_result(result, image):
     filename = f"mask_{timestamp}.png"
 
     # Define output directory
-    output_dir = "output/masks"
+    output_dir = "output/images"
 
     os.makedirs(output_dir, exist_ok=True)  # Ensure directory exists
 
