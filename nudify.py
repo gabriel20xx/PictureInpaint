@@ -15,6 +15,8 @@ import os
 import xformers
 import numpy as np
 import cv2
+import logging
+import sys
 
 # Use python 3.11 for this script
 
@@ -47,6 +49,24 @@ SAMPLER_NAME = "Euler"  # Change this to the desired sampler
 MASK_GROW_PIXELS = 15  # Amount to grow (dilate) mask
 TARGET_WIDTH = 2048
 TARGET_HEIGHT = 2048
+
+logging.basicConfig(
+    filename="output.log", level=logging.INFO, format="%(asctime)s - %(message)s"
+)
+
+
+class LoggerWriter:
+    def write(self, message):
+        if message.strip():  # Avoid writing empty lines
+            logging.info(message.strip())
+
+    def flush(self):
+        pass  # No need to implement flush for logging
+
+
+sys.stdout = LoggerWriter()
+
+print("This will be logged instead of printed")
 
 
 def get_system_information():
