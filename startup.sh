@@ -20,4 +20,4 @@ chmod -R 777 /app
 
 # Run the Python script nudify.py
 echo "Running nudify.py..."
-python3 nudify.py
+python3 nudify.py "$HF_TOKEN"

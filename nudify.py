@@ -8,6 +8,7 @@ from transformers import (
     SegformerImageProcessor,
     AutoModelForSemanticSegmentation,
 )
+from huggingface_hub import login
 from PIL import Image
 from datetime import datetime
 import gradio as gr
@@ -51,6 +52,11 @@ SAMPLER_NAME = "Euler"  # Change this to the desired sampler
 MASK_GROW_PIXELS = 15  # Amount to grow (dilate) mask
 TARGET_WIDTH = 2048
 TARGET_HEIGHT = 2048
+
+# Method 2: Read directly from the environment
+HF_TOKEN = os.getenv("HF_TOKE ", "default_value")
+print(f"Python read from environment: {HF_TOKEN}")
+login(token=HF_TOKEN)
 
 # Ensure the directory exists
 os.makedirs("output/logs", exist_ok=True)

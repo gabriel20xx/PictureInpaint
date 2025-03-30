@@ -3,6 +3,7 @@ FROM nvidia/cuda:11.8.0-base-ubuntu22.04
 
 # Set environment variable for non-interactive installation
 ENV DEBIAN_FRONTEND=noninteractive
+ENV HF_TOKEN=""
 
 # Update package list and install dependencies
 RUN apt update && apt install -y \
