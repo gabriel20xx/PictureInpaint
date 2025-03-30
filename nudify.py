@@ -66,6 +66,9 @@ class LoggerWriter:
     def flush(self):
         pass  # No need to implement flush for logging
 
+    def isatty(self):  # Fix for uvicorn expecting isatty()
+        return False
+
 
 sys.stdout = LoggerWriter()
 
