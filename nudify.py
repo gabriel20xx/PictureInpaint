@@ -49,20 +49,13 @@ TARGET_WIDTH = 2048
 TARGET_HEIGHT = 2048
 
 
-# ======== SAFE PRINT FUNCTION ========
-def safe_print(msg):
-    try:
-        print(msg)
-    except UnicodeEncodeError:
-        print(msg.encode("ascii", "ignore").decode())
-
-
 def get_system_information():
     print("CUDA available:", torch.cuda.is_available())
-    print("CUDA version:", torch.version.cuda)
-    print("Device:", torch.cuda.get_device_name(0))  # Should show GTX 1080
+    if torch.cuda.is_available():
+        print("CUDA version:", torch.version.cuda)
+        print("Device:", torch.cuda.get_device_name(0))  # Should show GTX 1080
+        print("Total memory:", torch.cuda.get_device_properties(0).total_memory)
     print("xFormers version:", xformers.__version__)
-    print("Total memory:", torch.cuda.get_device_properties(0).total_memory)
 
 
 # ======== LOAD INPUT IMAGE ========
@@ -73,7 +66,7 @@ def load_image_and_resize(image, target_width, target_height):
     try:
         # Ensure the image is in RGB format
         image = image.convert("RGB")
-        safe_print("Loaded image successfully.")
+        print("Loaded image successfully.")
         original_width, original_height = image.size
     except Exception as e:
         raise IOError(f"Failed to process image: {e}")
@@ -98,7 +91,7 @@ def load_image_and_resize(image, target_width, target_height):
 # ======== LOAD SEGMENTATION MODEL ========
 def load_segmentation_model():
     try:
-        safe_print("Loading clothes segmentation model...")
+        print("Loading clothes segmentation model...")
         processor = SegformerImageProcessor.from_pretrained(
             "sayeed99/segformer_b3_clothes"
         )
@@ -106,7 +99,7 @@ def load_segmentation_model():
             "sayeed99/segformer_b3_clothes"
         )
         model.eval()
-        safe_print("Segmentation model loaded.")
+        print("Segmentation model loaded.")
         return processor, model
     except Exception as e:
         raise RuntimeError(f"Failed to load segmentation model: {e}")
@@ -174,7 +167,7 @@ def save_black_inverted_alpha(clothes_mask, mask_grow_pixels=15):
 
     # Save as grayscale PNG
     Image.fromarray(mask).save(output_path)
-    safe_print(f"Mask saved: {output_path}")
+    print(f"Mask saved: {output_path}")
     return output_path, mask
 
 
@@ -205,7 +198,7 @@ def get_scheduler(scheduler_name, default_scheduler):
 
 def apply_lora(pipe, remote_lora):
     pipe.load_lora_weights(remote_lora)
-    safe_print(f"Lora {remote_lora} applied.")
+    print(f"Lora {remote_lora} applied.")
     return pipe
 
 
@@ -218,9 +211,9 @@ def apply_scheduler(
     use_beta_sigmas,
 ):
     # Set the sampler (scheduler)
-    safe_print(f"Setting scheduler {sampler_name}...")
+    print(f"Setting scheduler {sampler_name}...")
     pipe.scheduler = get_scheduler(sampler_name, pipe.scheduler)
-    safe_print("Scheduler set")
+    print("Scheduler set")
 
     # Enable sigmas
     pipe.scheduler.config["use_karras_sigmas"] = use_karras_sigmas
@@ -232,14 +225,11 @@ def apply_scheduler(
         invert_sigmas  # Leave as False or adjust as needed
     )
 
-    safe_print(f"Config: {pipe.scheduler.config}")
+    print(f"Config: {pipe.scheduler.config}")
     return pipe
 
 
 def get_device():
-    print("CUDA available:", torch.cuda.is_available())
-    print(torch.cuda.get_device_name(0))  # Should show GTX 1080
-    print("xFormers installed:", xformers.__version__)
     # Load model with optimized settings
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -248,10 +238,10 @@ def get_device():
         device == "cuda"
         and torch.cuda.get_device_properties(0).total_memory < 6 * 1024 * 1024 * 1024
     ):
-        safe_print("Low VRAM detected, switching to CPU mode.")
+        print("Low VRAM detected, switching to CPU mode.")
         device = "cpu"
 
-    safe_print(f"Using device: {device}")
+    print(f"Using device: {device}")
 
     return device
 
@@ -262,12 +252,12 @@ def load_pipeline(model):
     # Force minimal RAM/VRAM usage
     if device == "cuda":
         torch.cuda.empty_cache()  # Free GPU memory
-        safe_print("VRAM cache cleared")
+        print("VRAM cache cleared")
 
     torch_dtype = torch.float16 if device == "cuda" else torch.float32
 
     # Load the Flux model
-    safe_print(f"Loading Flux model {model}...")
+    print(f"Loading Flux model {model}...")
     try:
         pipe = FluxFillPipeline.from_pretrained(
             model,
@@ -288,9 +278,9 @@ def load_pipeline(model):
     pipe.to(device)
     if device == "cuda":
         pipe.enable_xformers_memory_efficient_attention()  # ✅ Requires `pip install xformers`
-        safe_print("Enabled xFormers optimization.")
+        print("Enabled xFormers optimization.")
 
-    safe_print(f"FluxFillPipeline loaded on {device}.")
+    print(f"FluxFillPipeline loaded on {device}.")
     return pipe
 
 
@@ -309,10 +299,10 @@ def inpaint(
     # Free memory after loading
     if device == "cuda":
         torch.cuda.empty_cache()
-        safe_print("VRAM cache cleared")
+        print("VRAM cache cleared")
 
     try:
-        safe_print(f"Starting inpainting process on {device}...")
+        print(f"Starting inpainting process on {device}...")
         result = pipe(
             prompt=prompt,
             image=image,
@@ -323,7 +313,7 @@ def inpaint(
 
         return result
     except Exception as e:
-        safe_print(f"Inpainting failed. Error: {e}")
+        print(f"Inpainting failed. Error: {e}")
 
 
 def save_result(result, image):
@@ -343,12 +333,12 @@ def save_result(result, image):
     output_path = os.path.join(output_dir, filename)
 
     result.save(output_path)
-    safe_print(f"Inpainting completed. Output saved as '{output_path}'.")
+    print(f"Inpainting completed. Output saved as '{output_path}'.")
     return output_path
 
 
 def generate_mask(input_image, mask_grow_pixels):
-    safe_print("Starting...")
+    print("Starting...")
     image = load_image_and_resize(input_image, TARGET_WIDTH, TARGET_HEIGHT)
     processor, segmentation_model = load_segmentation_model()
     mask = generate_clothing_mask(segmentation_model, processor, image)
@@ -410,7 +400,7 @@ def process_image(
         output_path = save_result(result, image)
         return output_path
     except Exception as e:
-        safe_print(f"Error: {e}")
+        print(f"Error: {e}")
 
 
 # Define Gradio UI
