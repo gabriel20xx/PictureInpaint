@@ -53,14 +53,14 @@ MASK_GROW_PIXELS = 15  # Amount to grow (dilate) mask
 TARGET_WIDTH = 2048
 TARGET_HEIGHT = 2048
 
-# Read from arguments
-HF_TOKEN = sys.argv[1] if len(sys.argv) > 1 and sys.argv[1] else None
+# Read HF_TOKEN from the environment
+hf_token = os.getenv("HF_TOKEN")
 
-if not HF_TOKEN:
-    print("Python: HF_TOKEN is not set!")
+if hf_token:
+    print("Python received HF_TOKEN successfully.")
+    login(token=hf_token)
 else:
-    print(f"Python received: {HF_TOKEN}")
-login(token=HF_TOKEN)
+    print("Python: HF_TOKEN is not set!")
 
 # Ensure the directory exists
 os.makedirs("output/logs", exist_ok=True)
