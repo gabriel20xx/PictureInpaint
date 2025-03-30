@@ -50,8 +50,11 @@ MASK_GROW_PIXELS = 15  # Amount to grow (dilate) mask
 TARGET_WIDTH = 2048
 TARGET_HEIGHT = 2048
 
+# Ensure the directory exists
+os.makedirs("output/logs", exist_ok=True)
+
 logging.basicConfig(
-    filename="output.log", level=logging.INFO, format="%(asctime)s - %(message)s"
+    filename="output/logs/output.log", level=logging.INFO, format="%(asctime)s - %(message)s"
 )
 
 
