@@ -17,6 +17,8 @@ import numpy as np
 import cv2
 import logging
 import sys
+import shutil
+import time
 
 # Use python 3.11 for this script
 
@@ -284,26 +286,48 @@ def load_pipeline(model):
 
     # Load the Flux model
     print(f"Loading Flux model {model}...")
-    try:
-        pipe = FluxFillPipeline.from_pretrained(
-            model,
-            torch_dtype=torch_dtype,
-            local_files_only=True,
-            offload_folder="./offload_cache",  # ✅ Offload parts of the model to disk
-        )
-        print("Model loaded from local cache.")
-    except OSError:
-        print("Model not found locally. Downloading from Hugging Face...")
-        # Download the model if not found locally
-        pipe = FluxFillPipeline.from_pretrained(
-            model,
-            torch_dtype=torch_dtype,
-        )
-        print("Model downloaded and saved to cache.")
+    cache_dir = os.path.expanduser("~/.cache/huggingface/hub")  # Adjust if needed
+    for attempt in range(3):  # Retry up to 3 times
+        try:
+            pipe = FluxFillPipeline.from_pretrained(
+                model,
+                torch_dtype=torch_dtype,
+                local_files_only=True,
+                offload_folder="./offload_cache",
+            )
+            print("✅ Model loaded from local cache.")
+            return pipe
+        except OSError:
+            print(
+                "⚠️ Model not found or files are corrupt. Deleting local files and redownloading..."
+            )
+
+            # Delete cached files if they exist
+            if os.path.exists(cache_dir):
+                shutil.rmtree(cache_dir)
+                print("🗑️ Cache cleared.")
+
+            try:
+                pipe = FluxFillPipeline.from_pretrained(
+                    model,
+                    torch_dtype=torch_dtype,
+                )
+                print("✅ Model downloaded and saved to cache.")
+                return pipe
+            except Exception as e:
+                print(f"❌ Download failed: {e}")
+                if "timeout" in str(e).lower():
+                    print("⏳ Retrying after 5 seconds...")
+                    time.sleep(5)
+                else:
+                    break  # Exit loop for non-timeout errors
+
+    raise RuntimeError("🚨 Failed to load the model after multiple attempts.")
 
     pipe.to(device)
     if device == "cuda":
-        pipe.enable_xformers_memory_efficient_attention()  # ✅ Requires `pip install xformers`
+        pipe.enable_xformers_memory_efficient_attention(
+        )  # ✅ Requires `pip install xformers`
         print("Enabled xFormers optimization.")
 
     print(f"FluxFillPipeline loaded on {device}.")
