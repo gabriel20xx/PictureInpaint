@@ -9,9 +9,11 @@ from transformers import (
     AutoModelForSemanticSegmentation,
 )
 from huggingface_hub import login
+from safetensors.torch import load_file
 from PIL import Image
 from datetime import datetime
 import gradio as gr
+import requests
 import os
 import xformers
 import numpy as np
@@ -236,9 +238,52 @@ def get_scheduler(scheduler_name, default_scheduler):
     return new_scheduler
 
 
-def apply_lora(pipe, remote_lora):
-    pipe.load_lora_weights(remote_lora)
-    print(f"Lora {remote_lora} applied.")
+def apply_lora(pipe, lota_mo):
+    # LoRA Model ID or URL from CivitAI
+    MODEL_ID = "1392143"  # Replace with actual LoRA model ID
+    SAVE_DIR = "lora_models"
+
+    # Step 1: Fetch the LoRA model details from CivitAI API
+    response = requests.get(f"https://civitai.com/api/v1/models/{MODEL_ID}")
+    data = response.json()
+
+    # Step 2: Find the latest SafeTensors file
+    model_file_url = None
+    model_filename = None
+
+    for version in data.get("modelVersions", []):
+        for file in version.get("files", []):
+            if file["name"].endswith(".safetensors"):  # Prioritize SafeTensors format
+                model_file_url = file["downloadUrl"]
+                model_filename = file["name"]
+                break
+        if model_file_url:
+            break
+
+    if model_file_url and model_filename:
+        # Step 3: Download the LoRA model
+        os.makedirs(SAVE_DIR, exist_ok=True)
+        save_path = os.path.join(SAVE_DIR, model_filename)
+
+        if not os.path.exists(save_path):  # Avoid re-downloading
+            print(f"Downloading {model_filename}...")
+            with requests.get(model_file_url, stream=True) as r:
+                r.raise_for_status()
+                with open(save_path, "wb") as f:
+                    for chunk in r.iter_content(chunk_size=8192):
+                        f.write(chunk)
+            print(f"LoRA downloaded to {save_path}")
+        else:
+            print(f"LoRA already exists: {save_path}")
+
+        print(f"Loading LoRA: {save_path}")
+        state_dict = load_file(save_path)
+        pipe.load_lora_weights(state_dict)
+        pipe.to("cuda")  # Move to GPU if available
+
+        print(f"LoRA {model_filename} applied successfully.")
+    else:
+        print("No LoRA file found for this model.")
     return pipe
 
 
