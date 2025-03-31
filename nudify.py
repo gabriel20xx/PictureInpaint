@@ -373,6 +373,7 @@ def load_pipeline(model):
                 print("🗑️ Cache cleared.")
 
             try:
+                print("Downloading model from Hugging Face...")
                 pipe = FluxFillPipeline.from_pretrained(
                     model,
                     torch_dtype=torch_dtype,
@@ -381,13 +382,9 @@ def load_pipeline(model):
                 break  # Exit loop if successful
             except Exception as e:
                 print(f"❌ Download failed: {e}")
-
-                if "timeout" in str(e).lower():
-                    print("⏳ Retrying after 5 seconds...")
-                    time.sleep(5)
-                    retries += 1
-                else:
-                    raise RuntimeError("🚨 Model download failed due to a non-timeout error.") from e
+                print("⏳ Retrying after 5 seconds...")
+                time.sleep(5)
+                retries += 1
 
     pipe.to(device)
     print(f"✅ FluxFillPipeline loaded on {device}.")
