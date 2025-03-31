@@ -360,6 +360,7 @@ def inpaint(
         pipe.enable_xformers_memory_efficient_attention()  # ✅ Requires `pip install xformers`
         print("Enabled xFormers optimization.")
         torch.backends.cuda.matmul.allow_tf32 = True
+        print("Matmul allow tf32 enabled.")
 
     try:
         print(f"Starting inpainting process on {device}...")
