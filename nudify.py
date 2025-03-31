@@ -56,40 +56,42 @@ MASK_GROW_PIXELS = 15  # Amount to grow (dilate) mask
 TARGET_WIDTH = 2048
 TARGET_HEIGHT = 2048
 
-# Read HF_TOKEN from the environment
-hf_token = os.getenv("HF_TOKEN")
 
-if hf_token:
-    print("Python received HF_TOKEN successfully.")
-    login(token=hf_token)
-else:
-    print("Python: HF_TOKEN is not set!")
+def login_hf():
+    # Read HF_TOKEN from the environment
+    hf_token = os.getenv("HF_TOKEN")
 
-# Ensure the directory exists
-os.makedirs("output/logs", exist_ok=True)
-
-logging.basicConfig(
-    filename="output/logs/output.log",
-    level=logging.INFO,
-    format="%(asctime)s - %(message)s",
-)
+    if hf_token:
+        print("Python received HF_TOKEN successfully.")
+        login(token=hf_token)
+    else:
+        print("Python: HF_TOKEN is not set!")
 
 
-class LoggerWriter:
-    def write(self, message):
-        if message.strip():  # Avoid writing empty lines
-            logging.info(message.strip())
+def setup_logger():
+    # Ensure the directory exists
+    os.makedirs("output/logs", exist_ok=True)
 
-    def flush(self):
-        pass  # No need to implement flush for logging
+    logging.basicConfig(
+        filename="output/logs/output.log",
+        level=logging.INFO,
+        format="%(asctime)s - %(message)s",
+    )
 
-    def isatty(self):  # Fix for uvicorn expecting isatty()
-        return False
+    class LoggerWriter:
+        def write(self, message):
+            if message.strip():  # Avoid writing empty lines
+                logging.info(message.strip())
 
+        def flush(self):
+            pass  # No need to implement flush for logging
 
-sys.stdout = LoggerWriter()
+        def isatty(self):  # Fix for uvicorn expecting isatty()
+            return False
 
-print("This will be logged instead of printed")
+    sys.stdout = LoggerWriter()
+
+    print("This will be logged instead of printed")
 
 
 def get_system_information():
@@ -602,7 +604,9 @@ with gr.Blocks() as app:
 
 
 if __name__ == "__main__":
+    setup_logger()
     get_system_information()
+    login_hf()
     app.launch(
         server_name="0.0.0.0",
         server_port=7862,
