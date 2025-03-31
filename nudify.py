@@ -341,18 +341,19 @@ def get_device():
 def load_pipeline(model):
     device = get_device()
 
-    # Force minimal RAM/VRAM usage
+    # Free GPU memory if using CUDA
     if device == "cuda":
-        torch.cuda.empty_cache()  # Free GPU memory
+        torch.cuda.empty_cache()
         print("VRAM cache cleared")
 
     torch_dtype = torch.float16 if device == "cuda" else torch.float32
-
-    # Load the Flux model
-    print(f"Loading Flux model {model}...")
     cache_dir = os.path.expanduser("~/.cache/huggingface/hub")  # Adjust if needed
+
+    print(f"Loading Flux model {model}...")
+    retries = 0
     while True:
         try:
+            # Attempt to load from cache first
             pipe = FluxFillPipeline.from_pretrained(
                 model,
                 torch_dtype=torch_dtype,
@@ -360,13 +361,11 @@ def load_pipeline(model):
                 offload_folder="./offload_cache",
             )
             print("✅ Model loaded from local cache.")
-            return pipe
+            break  # Exit loop if successful
         except OSError:
-            print(
-                "⚠️ Model not found or files are corrupt. Deleting local files and redownloading..."
-            )
+            print("⚠️ Model not found or files are corrupt. Deleting local files and redownloading...")
 
-            # Delete cached files if they exist
+            # Delete cached files
             if os.path.exists(cache_dir):
                 shutil.rmtree(cache_dir)
                 print("🗑️ Cache cleared.")
@@ -377,19 +376,19 @@ def load_pipeline(model):
                     torch_dtype=torch_dtype,
                 )
                 print("✅ Model downloaded and saved to cache.")
-                return pipe
+                break  # Exit loop if successful
             except Exception as e:
                 print(f"❌ Download failed: {e}")
+
                 if "timeout" in str(e).lower():
                     print("⏳ Retrying after 5 seconds...")
                     time.sleep(5)
+                    retries += 1
                 else:
-                    break  # Exit loop for non-timeout errors
-
-        raise RuntimeError("🚨 Failed to load the model after multiple attempts.")
+                    raise RuntimeError("🚨 Model download failed due to a non-timeout error.") from e
 
     pipe.to(device)
-    print(f"FluxFillPipeline loaded on {device}.")
+    print(f"✅ FluxFillPipeline loaded on {device}.")
     return pipe
 
 
