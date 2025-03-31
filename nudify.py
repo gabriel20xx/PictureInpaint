@@ -42,6 +42,7 @@ INPAINTED_OUTPUT_PATH = "output/images"
 OUTPUT_FILENAME = "nudified_output.png"
 AVAILABLE_CHECKPOINTS = ["black-forest-labs/FLUX.1-Fill-dev"]
 AVAILABLE_LORAS = ["None", "xey/sldr_flux_nsfw_v2-studio"]
+LORA_MODEL_IDS = ["None", "1392143"]
 INVERT_SIGMAS = False
 USE_KARRAS_SIGMAS = False
 USE_EXPONENTIAL_SIGMAS = False
@@ -238,13 +239,12 @@ def get_scheduler(scheduler_name, default_scheduler):
     return new_scheduler
 
 
-def apply_lora(pipe, lota_mo):
+def apply_lora(pipe, lora_model_id):
     # LoRA Model ID or URL from CivitAI
-    MODEL_ID = "1392143"  # Replace with actual LoRA model ID
     SAVE_DIR = "lora_models"
 
     # Step 1: Fetch the LoRA model details from CivitAI API
-    response = requests.get(f"https://civitai.com/api/v1/models/{MODEL_ID}")
+    response = requests.get(f"https://civitai.com/api/v1/models/{lora_model_id}")
     data = response.json()
 
     # Step 2: Find the latest SafeTensors file
@@ -461,7 +461,7 @@ def process_image(
     mask,
     prompt,
     checkpoint_model,
-    lora_model,
+    lora_model_id,
     num_inference_steps,
     guidance_scale,
     sampler_name,
@@ -473,8 +473,8 @@ def process_image(
     try:
         pipe = load_pipeline(checkpoint_model)
 
-        if lora_model != "None":
-            pipe = apply_lora(pipe, lora_model)
+        if lora_model_id != "None":
+            pipe = apply_lora(pipe, lora_model_id)
 
         pipe = apply_scheduler(
             pipe,
@@ -537,7 +537,7 @@ with gr.Blocks() as app:
                 label="Checkpoint Model",
             )
             lora_input = gr.Dropdown(
-                choices=AVAILABLE_LORAS, value=AVAILABLE_LORAS[1], label="LoRA Model"
+                choices=LORA_MODEL_IDS, value=LORA_MODEL_IDS[1], label="LoRA Model"
             )
             steps_input = gr.Slider(5, 50, value=25, step=1, label="Inference Steps")
             guidance_input = gr.Slider(
