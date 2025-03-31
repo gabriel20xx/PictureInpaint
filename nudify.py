@@ -266,13 +266,20 @@ def apply_lora(pipe, lora_model_id):
         save_path = os.path.join(save_dir, model_filename)
 
         if not os.path.exists(save_path):  # Avoid re-downloading
-            print(f"Downloading {model_filename}...")
-            with requests.get(model_file_url, stream=True) as r:
-                r.raise_for_status()
-                with open(save_path, "wb") as f:
-                    for chunk in r.iter_content(chunk_size=8192):
-                        f.write(chunk)
-            print(f"LoRA downloaded to {save_path}")
+            retries = 0
+            while True:
+                try:
+                    with requests.get(model_file_url, stream=True, timeout=10) as r:
+                        r.raise_for_status()
+                        with open(save_path, "wb") as f:
+                            for chunk in r.iter_content(chunk_size=8192):
+                                f.write(chunk)
+                    print(f"LoRA downloaded to {save_path}")
+                    break  # Exit loop if download is successful
+                except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+                    retries += 1
+                    print(f"Network error: {e}. Retrying in 5 seconds... (Attempt {retries}")
+                    time.sleep(5)
         else:
             print(f"LoRA already exists: {save_path}")
 
