@@ -351,7 +351,7 @@ def load_pipeline(model):
     torch_dtype = torch.float16 if device == "cuda" else torch.float32
     cache_dir = os.path.expanduser("~/.cache/huggingface/hub")  # Adjust if needed
 
-    print(f"Loading Flux model {model}...")
+    print(f"Loading Flux Fill model {model}...")
     retries = 0
     while True:
         try:
@@ -535,39 +535,43 @@ with gr.Blocks() as app:
             )
 
     with gr.Row():
-        prompt_input = gr.Textbox(
-            value=PROMPT, placeholder="Prompt", label="Prompt"
-        )
-        checkpoint_input = gr.Dropdown(
-            choices=AVAILABLE_CHECKPOINTS,
-            value=AVAILABLE_CHECKPOINTS[0],
-            label="Checkpoint Model",
-        )
-        lora_input = gr.Dropdown(
-            choices=LORA_MODEL_IDS, value=LORA_MODEL_IDS[1], label="LoRA Model"
-        )
-        steps_input = gr.Slider(5, 50, value=25, step=1, label="Inference Steps")
-        guidance_input = gr.Slider(
-            1.0, 15.0, value=7.5, step=0.5, label="Guidance Scale"
-        )
-        mask_grow_pixels_input = gr.Slider(
-            0, 50, value=MASK_GROW_PIXELS, step=1, label="Mask Growth (px)"
-        )
-        sampler_input = gr.Dropdown(
-            choices=["Euler", "DPM++ 2M"], value=SAMPLER_NAME, label="Sampler Type"
-        )
-        use_karras_sigmas_input = gr.Checkbox(
-            value=USE_KARRAS_SIGMAS, label="Use Karras Sigmas"
-        )
-        use_exponential_sigmas_input = gr.Checkbox(
-            value=USE_EXPONENTIAL_SIGMAS, label="Use Exponential Sigmas"
-        )
-        use_beta_sigmas_input = gr.Checkbox(
-            value=USE_BETA_SIGMAS, label="Use Beta Sigmas"
-        )
-        invert_sigmas_input = gr.Checkbox(
-            value=INVERT_SIGMAS, label="Invert Sigmas"
-        )
+        with gr.Column():
+            prompt_input = gr.Textbox(
+                value=PROMPT, placeholder="Prompt", label="Prompt"
+            )
+        with gr.Column():
+            checkpoint_input = gr.Dropdown(
+                choices=AVAILABLE_CHECKPOINTS,
+                value=AVAILABLE_CHECKPOINTS[0],
+                label="Checkpoint Model",
+            )
+            lora_input = gr.Dropdown(
+                choices=LORA_MODEL_IDS, value=LORA_MODEL_IDS[1], label="LoRA Model"
+            )
+        with gr.Column():
+            steps_input = gr.Slider(5, 50, value=25, step=1, label="Inference Steps")
+            guidance_input = gr.Slider(
+                1.0, 15.0, value=7.5, step=0.5, label="Guidance Scale"
+            )
+            mask_grow_pixels_input = gr.Slider(
+                0, 50, value=MASK_GROW_PIXELS, step=1, label="Mask Growth (px)"
+            )
+            sampler_input = gr.Dropdown(
+                choices=["Euler", "DPM++ 2M"], value=SAMPLER_NAME, label="Sampler Type"
+            )
+        with gr.Column():
+            use_karras_sigmas_input = gr.Checkbox(
+                value=USE_KARRAS_SIGMAS, label="Use Karras Sigmas"
+            )
+            use_exponential_sigmas_input = gr.Checkbox(
+                value=USE_EXPONENTIAL_SIGMAS, label="Use Exponential Sigmas"
+            )
+            use_beta_sigmas_input = gr.Checkbox(
+                value=USE_BETA_SIGMAS, label="Use Beta Sigmas"
+            )
+            invert_sigmas_input = gr.Checkbox(
+                value=INVERT_SIGMAS, label="Invert Sigmas"
+            )
 
         mask = gr.State()  # Stores intermediate data
         image = gr.State()  # Stores intermediate data
