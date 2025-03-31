@@ -332,7 +332,7 @@ def load_pipeline(model):
                 else:
                     break  # Exit loop for non-timeout errors
 
-    raise RuntimeError("🚨 Failed to load the model after multiple attempts.")
+        raise RuntimeError("🚨 Failed to load the model after multiple attempts.")
 
     pipe.to(device)
     if device == "cuda":
