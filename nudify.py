@@ -241,7 +241,7 @@ def get_scheduler(scheduler_name, default_scheduler):
 
 def apply_lora(pipe, lora_model_id):
     # LoRA Model ID or URL from CivitAI
-    SAVE_DIR = "lora_models"
+    save_dir = "lora_models"
 
     # Step 1: Fetch the LoRA model details from CivitAI API
     response = requests.get(f"https://civitai.com/api/v1/models/{lora_model_id}")
@@ -262,8 +262,8 @@ def apply_lora(pipe, lora_model_id):
 
     if model_file_url and model_filename:
         # Step 3: Download the LoRA model
-        os.makedirs(SAVE_DIR, exist_ok=True)
-        save_path = os.path.join(SAVE_DIR, model_filename)
+        os.makedirs(save_dir, exist_ok=True)
+        save_path = os.path.join(save_dir, model_filename)
 
         if not os.path.exists(save_path):  # Avoid re-downloading
             print(f"Downloading {model_filename}...")
