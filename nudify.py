@@ -66,7 +66,9 @@ else:
 os.makedirs("output/logs", exist_ok=True)
 
 logging.basicConfig(
-    filename="output/logs/output.log", level=logging.INFO, format="%(asctime)s - %(message)s"
+    filename="output/logs/output.log",
+    level=logging.INFO,
+    format="%(asctime)s - %(message)s",
 )
 
 
@@ -297,7 +299,7 @@ def load_pipeline(model):
     # Load the Flux model
     print(f"Loading Flux model {model}...")
     cache_dir = os.path.expanduser("~/.cache/huggingface/hub")  # Adjust if needed
-    for attempt in range(3):  # Retry up to 3 times
+    while True:
         try:
             pipe = FluxFillPipeline.from_pretrained(
                 model,
@@ -335,11 +337,6 @@ def load_pipeline(model):
         raise RuntimeError("🚨 Failed to load the model after multiple attempts.")
 
     pipe.to(device)
-    if device == "cuda":
-        pipe.enable_xformers_memory_efficient_attention(
-        )  # ✅ Requires `pip install xformers`
-        print("Enabled xFormers optimization.")
-
     print(f"FluxFillPipeline loaded on {device}.")
     return pipe
 
@@ -360,16 +357,19 @@ def inpaint(
     if device == "cuda":
         torch.cuda.empty_cache()
         print("VRAM cache cleared")
-
+        pipe.enable_xformers_memory_efficient_attention()  # ✅ Requires `pip install xformers`
+        print("Enabled xFormers optimization.")
+        torch.backends.cuda.matmul.allow_tf32 = True
     try:
         print(f"Starting inpainting process on {device}...")
-        result = pipe(
-            prompt=prompt,
-            image=image,
-            mask_image=mask,
-            num_inference_steps=num_inference_steps,
-            guidance_scale=guidance_scale,
-        ).images[0]
+        with torch.no_grad():  # Prevents storing intermediate gradients
+            result = pipe(
+                prompt=prompt,
+                image=image,
+                mask_image=mask,
+                num_inference_steps=num_inference_steps,
+                guidance_scale=guidance_scale,
+            ).images[0]
 
         return result
     except Exception as e:
