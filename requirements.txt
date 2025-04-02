@@ -1,0 +1,10 @@
+diffusers
+transformers
+pillow
+numpy<2
+opencv-python
+accelerate
+sentencepiece
+peft
+gradio
+protobuf

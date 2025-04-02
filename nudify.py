@@ -1,5 +1,4 @@
 import torch
-from torch import autocast
 from diffusers import (
     FluxFillPipeline,
     FlowMatchEulerDiscreteScheduler,
@@ -9,25 +8,41 @@ from transformers import (
     SegformerImageProcessor,
     AutoModelForSemanticSegmentation,
 )
+from huggingface_hub import login
+from safetensors.torch import load_file
 from PIL import Image
+from datetime import datetime
 import gradio as gr
+import requests
 import os
+import xformers
 import numpy as np
 import cv2
-import gc
+import logging
+import sys
+import shutil
+import time
 
 # Use python 3.11 for this script
 
 # Run these once
-# pip install torch --index-url https://download.pytorch.org/whl/cu118
-# pip install diffusers transformers pillow numpy opencv-python accelerate sentencepiece peft xformers gradio gc bitdandbytes
+# python -m venv fluxfill
+# Activate venv on CMD: fluxfill\Scripts\activate
+# Activate venv on PS: fluxfill\Scripts\Activate.ps1
+# Activate venv on Linux: source fluxfill/bin/activate
+# pip install torch==2.1.0 torchvision==0.15.2 torchaudio==2.0.2 xformers --index-url https://download.pytorch.org/whl/cu118
+# pip install diffusers transformers pillow numpy<2 opencv-python accelerate sentencepiece peft protobuf gradio triton
+# pip install https://github.com/bycloud-AI/DiffBIR-Windows/raw/refs/heads/main/triton-2.0.0-cp310-cp310-win_amd64.whl
+# set PYTORCH_CUDA_ALLOC_CONF=expandable_segments=True,max_split_size_mb=64,garbage_collection_threshold=0.98
 
 # ======== CONFIGURATION ========
-MASK_OUTPUT_PATH = "example_output_masks/clothes_mask_alpha_6.png"
-INPAINTED_OUTPUT_PATH = "example_output_images/nudified_output_6.png"
+MASK_OUTPUT_PATH = "output/masks"
+MASK_FILENAME = "mask_output.png"
+INPAINTED_OUTPUT_PATH = "output/images"
+OUTPUT_FILENAME = "nudified_output.png"
 AVAILABLE_CHECKPOINTS = ["black-forest-labs/FLUX.1-Fill-dev"]
-CACHE_DIR = "./.cache"
 AVAILABLE_LORAS = ["None", "xey/sldr_flux_nsfw_v2-studio"]
+LORA_MODEL_IDS = ["None", "1392143"]
 INVERT_SIGMAS = False
 USE_KARRAS_SIGMAS = False
 USE_EXPONENTIAL_SIGMAS = False
@@ -40,33 +55,52 @@ SAMPLER_NAME = "Euler"  # Change this to the desired sampler
 MASK_GROW_PIXELS = 15  # Amount to grow (dilate) mask
 TARGET_WIDTH = 2048
 TARGET_HEIGHT = 2048
-LOW_RAM_MODE = False
-LOW_VRAM_MODE = False
 
 
-# ======== SAFE PRINT FUNCTION ========
-def safe_print(msg):
-    try:
-        print(msg)
-    except UnicodeEncodeError:
-        print(msg.encode("ascii", "ignore").decode())
+def login_hf():
+    # Read HF_TOKEN from the environment
+    hf_token = os.getenv("HF_TOKEN")
+
+    if hf_token:
+        print("Python received HF_TOKEN successfully.")
+        login(token=hf_token)
+    else:
+        print("Python: HF_TOKEN is not set!")
 
 
-# Function to avoid overwriting existing files by adding a suffix
-def get_unique_output_path(base_path):
-    if not os.path.exists(base_path):
-        return base_path
+def setup_logger():
+    # Ensure the directory exists
+    os.makedirs("output/logs", exist_ok=True)
 
-    # Add a numerical suffix to the file if it already exists
-    name, ext = os.path.splitext(base_path)
-    counter = 1
-    new_path = f"{name}_{counter}{ext}"
+    logging.basicConfig(
+        filename="output/logs/output.log",
+        level=logging.INFO,
+        format="%(asctime)s - %(message)s",
+    )
 
-    while os.path.exists(new_path):
-        counter += 1
-        new_path = f"{name}_{counter}{ext}"
+    class LoggerWriter:
+        def write(self, message):
+            if message.strip():  # Avoid writing empty lines
+                logging.info(message.strip())
 
-    return new_path
+        def flush(self):
+            pass  # No need to implement flush for logging
+
+        def isatty(self):  # Fix for uvicorn expecting isatty()
+            return False
+
+    sys.stdout = LoggerWriter()
+
+    print("This will be logged instead of printed")
+
+
+def get_system_information():
+    print("CUDA available:", torch.cuda.is_available())
+    if torch.cuda.is_available():
+        print("CUDA version:", torch.version.cuda)
+        print("Device:", torch.cuda.get_device_name(0))  # Should show GTX 1080
+        print("Total memory:", torch.cuda.get_device_properties(0).total_memory)
+    print("xFormers version:", xformers.__version__)
 
 
 # ======== LOAD INPUT IMAGE ========
@@ -77,7 +111,7 @@ def load_image_and_resize(image, target_width, target_height):
     try:
         # Ensure the image is in RGB format
         image = image.convert("RGB")
-        safe_print("Loaded image successfully.")
+        print("Loaded image successfully.")
         original_width, original_height = image.size
     except Exception as e:
         raise IOError(f"Failed to process image: {e}")
@@ -102,7 +136,7 @@ def load_image_and_resize(image, target_width, target_height):
 # ======== LOAD SEGMENTATION MODEL ========
 def load_segmentation_model():
     try:
-        safe_print("Loading clothes segmentation model...")
+        print("Loading clothes segmentation model...")
         processor = SegformerImageProcessor.from_pretrained(
             "sayeed99/segformer_b3_clothes"
         )
@@ -110,7 +144,7 @@ def load_segmentation_model():
             "sayeed99/segformer_b3_clothes"
         )
         model.eval()
-        safe_print("Segmentation model loaded.")
+        print("Segmentation model loaded.")
         return processor, model
     except Exception as e:
         raise RuntimeError(f"Failed to load segmentation model: {e}")
@@ -142,6 +176,9 @@ def generate_clothing_mask(model, processor, image):
 
 # ======== APPLY MASK GROW AND SAVE ========
 def save_black_inverted_alpha(clothes_mask, output_path, mask_grow_pixels=15):
+def save_black_inverted_alpha(clothes_mask, mask_grow_pixels=15):
+    mask = (clothes_mask * 255).astype(np.uint8)  # Convert 1s to 255 (white mask)
+
     dilate_size = max(5, mask_grow_pixels)  # Ensure mask grows sufficiently
     close_size = max(3, mask_grow_pixels // 3)  # Ensure minimum size of 3
 
@@ -162,13 +199,21 @@ def save_black_inverted_alpha(clothes_mask, output_path, mask_grow_pixels=15):
     blur_ksize = max(5, (mask_grow_pixels // 2) * 2 + 1)  # Ensure odd kernel size
     mask = cv2.GaussianBlur(mask, (blur_ksize, blur_ksize), sigmaX=0, sigmaY=0)
 
-    Image.fromarray(mask).save(output_path)
-    safe_print(f"Mask saved: {output_path}")
-    # mask = (clothes_mask * 255).astype(np.uint8)  # Convert 1s to 255 (white mask)
+    # Generate timestamped filename
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    filename = f"mask_{timestamp}.png"
+
+    # Define output directory
+    output_dir = "output/masks"
+
+    os.makedirs(output_dir, exist_ok=True)  # Ensure directory exists
+
+    # Construct full output path
+    output_path = os.path.join(output_dir, filename)
 
     # Save as grayscale PNG
-    # Image.fromarray(mask).save(output_path)
-    safe_print(f"Mask saved: {output_path}")
+    Image.fromarray(mask).save(output_path)
+    print(f"Mask saved: {output_path}")
     return output_path, mask
 
 
@@ -197,9 +242,57 @@ def get_scheduler(scheduler_name, default_scheduler):
     return new_scheduler
 
 
-def apply_lora(pipe, remote_lora):
-    pipe.load_lora_weights(remote_lora)
-    safe_print(f"Lora {remote_lora} applied.")
+def apply_lora(pipe, lora_model_id):
+    # LoRA Model ID or URL from CivitAI
+    save_dir = "lora_models"
+
+    # Step 1: Fetch the LoRA model details from CivitAI API
+    response = requests.get(f"https://civitai.com/api/v1/models/{lora_model_id}")
+    data = response.json()
+
+    # Step 2: Find the latest SafeTensors file
+    model_file_url = None
+    model_filename = None
+
+    for version in data.get("modelVersions", []):
+        for file in version.get("files", []):
+            if file["name"].endswith(".safetensors"):  # Prioritize SafeTensors format
+                model_file_url = file["downloadUrl"]
+                model_filename = file["name"]
+                break
+        if model_file_url:
+            break
+
+    if model_file_url and model_filename:
+        # Step 3: Download the LoRA model
+        os.makedirs(save_dir, exist_ok=True)
+        save_path = os.path.join(save_dir, model_filename)
+
+        if not os.path.exists(save_path):  # Avoid re-downloading
+            retries = 0
+            while True:
+                try:
+                    with requests.get(model_file_url, stream=True, timeout=10) as r:
+                        r.raise_for_status()
+                        with open(save_path, "wb") as f:
+                            for chunk in r.iter_content(chunk_size=8192):
+                                f.write(chunk)
+                    print(f"LoRA downloaded to {save_path}")
+                    break  # Exit loop if download is successful
+                except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+                    retries += 1
+                    print(f"Network error: {e}. Retrying in 5 seconds... (Attempt {retries}")
+                    time.sleep(5)
+        else:
+            print(f"LoRA already exists: {save_path}")
+
+        print(f"Loading LoRA: {save_path}")
+        state_dict = load_file(save_path)
+        pipe.load_lora_weights(state_dict)
+
+        print(f"LoRA {model_filename} applied successfully.")
+    else:
+        print("No LoRA file found for this model.")
     return pipe
 
 
@@ -212,9 +305,9 @@ def apply_scheduler(
     use_beta_sigmas,
 ):
     # Set the sampler (scheduler)
-    safe_print(f"Setting scheduler {sampler_name}...")
+    print(f"Setting scheduler {sampler_name}...")
     pipe.scheduler = get_scheduler(sampler_name, pipe.scheduler)
-    safe_print("Scheduler set")
+    print("Scheduler set")
 
     # Enable sigmas
     pipe.scheduler.config["use_karras_sigmas"] = use_karras_sigmas
@@ -226,7 +319,7 @@ def apply_scheduler(
         invert_sigmas  # Leave as False or adjust as needed
     )
 
-    safe_print(f"Config: {pipe.scheduler.config}")
+    print(f"Config: {pipe.scheduler.config}")
     return pipe
 
 
@@ -239,61 +332,61 @@ def get_device():
         device == "cuda"
         and torch.cuda.get_device_properties(0).total_memory < 6 * 1024 * 1024 * 1024
     ):
-        safe_print("Low VRAM detected, switching to CPU mode.")
+        print("Low VRAM detected, switching to CPU mode.")
         device = "cpu"
 
-    safe_print(f"Using device: {device}")
+    print(f"Using device: {device}")
 
     return device
 
 
-def load_pipeline(model, device, cache_dir, low_ram_mode, low_vram_mode):
-    # Force minimal RAM/VRAM usage
-    gc.collect()  # Free CPU memory
+def load_pipeline(model):
+    device = get_device()
+
+    # Free GPU memory if using CUDA
     if device == "cuda":
-        torch.cuda.empty_cache()  # Free GPU memory
+        torch.cuda.empty_cache()
+        print("VRAM cache cleared")
 
     torch_dtype = torch.float16 if device == "cuda" else torch.float32
+    cache_dir = os.path.expanduser("~/.cache/huggingface/hub")  # Adjust if needed
 
-    # Load the Flux model
-    safe_print(f"Loading Flux model {model}...")
-    try:
-        pipe = FluxFillPipeline.from_pretrained(
-            model,
-            torch_dtype=torch_dtype,
-            cache_dir=cache_dir,
-            local_files_only=True,
-            use_safetensors=low_ram_mode,  # Avoid loading unnecessary weights
-            offload_folder="./offload_cache",  # ✅ Offload parts of the model to disk
-        )
-        print("Model loaded from local cache.")
-    except OSError:
-        print("Model not found locally. Downloading from Hugging Face...")
-        # Download the model if not found locally
-        pipe = FluxFillPipeline.from_pretrained(
-            model,
-            cache_dir=cache_dir,
-            torch_dtype=torch_dtype,
-        )
-        print("Model downloaded and saved to cache.")
-    pipe.reset_device_map()
-    if device == "cuda" and low_vram_mode:
-        pipe.to("cuda", torch_dtype=torch.float16)  # Use fp16 precision
-        pipe.enable_sequential_cpu_offload()  # Move unused layers to CPU
-    elif device == "cuda" or device == "cpu":
-        pipe.to(device)
+    print(f"Loading Flux Fill model {model}...")
+    retries = 0
+    while True:
+        try:
+            # Attempt to load from cache first
+            pipe = FluxFillPipeline.from_pretrained(
+                model,
+                torch_dtype=torch_dtype,
+                local_files_only=True,
+                offload_folder="./offload_cache",
+            )
+            print("✅ Model loaded from local cache.")
+            break  # Exit loop if successful
+        except OSError:
+            print("⚠️ Model not found or files are corrupt. Deleting local files and redownloading...")
 
-    if low_ram_mode:
-        # Additional optimizations
-        pipe.vae.enable_slicing()
-        pipe.vae.enable_tiling()
-        pipe.enable_vae_slicing()
-        pipe.enable_attention_slicing()
+            # Delete cached files
+            if os.path.exists(cache_dir):
+                shutil.rmtree(cache_dir)
+                print("🗑️ Cache cleared.")
 
-    if device == "cuda" and low_vram_mode:
-        pipe.enable_xformers_memory_efficient_attention()  # ✅ Requires `pip install xformers`
+            try:
+                print("Downloading model from Hugging Face...")
+                pipe = FluxFillPipeline.from_pretrained(
+                    model,
+                    torch_dtype=torch_dtype,
+                )
+                print("✅ Model downloaded and saved to cache.")
+                break  # Exit loop if successful
+            except Exception as e:
+                print(f"❌ Download failed: {e}")
+                print("⏳ Retrying after 5 seconds...")
+                time.sleep(5)
+                retries += 1
 
-    safe_print(f"FluxFillPipeline loaded on {device}.")
+    print(f"✅ FluxFillPipeline loaded on {device}.")
     return pipe
 
 
@@ -302,22 +395,26 @@ def inpaint(
     image,
     mask,
     pipe,
-    device,
     prompt,
     num_inference_steps,
     guidance_scale,
 ):
-    print(f"Input image type: {type(image)}")
-    print(f"Mask image type: {type(mask)}")
+    device = get_device()
 
     # Free memory after loading
-    gc.collect()
     if device == "cuda":
         torch.cuda.empty_cache()
+        print("VRAM cache cleared")
+        pipe.enable_xformers_memory_efficient_attention()  # ✅ Requires `pip install xformers`
+        print("Enabled xFormers optimization.")
+        torch.backends.cuda.matmul.allow_tf32 = True
+        print("Matmul allow tf32 enabled.")
+
+    pipe.to(device)
 
     try:
-        safe_print(f"Starting inpainting process on {device}...")
-        with autocast(str(device)):
+        print(f"Starting inpainting process on {device}...")
+        with torch.no_grad():  # Prevents storing intermediate gradients
             result = pipe(
                 prompt=prompt,
                 image=image,
@@ -328,25 +425,37 @@ def inpaint(
 
         return result
     except Exception as e:
-        safe_print(f"Inpainting failed. Error: {e}")
+        print(f"Inpainting failed. Error: {e}")
 
 
-def save_result(result, image, output_path):
+def save_result(result, image):
     # Ensure same size output
     result = result.resize(image.size)
 
+    # Generate timestamped filename
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    filename = f"mask_{timestamp}.png"
+
+    # Define output directory
+    output_dir = "output/images"
+
+    os.makedirs(output_dir, exist_ok=True)  # Ensure directory exists
+
+    # Construct full output path
+    output_path = os.path.join(output_dir, filename)
+
     result.save(output_path)
-    safe_print(f"Inpainting completed. Output saved as '{output_path}'.")
+    print(f"Inpainting completed. Output saved as '{output_path}'.")
+    return output_path
 
 
 def generate_mask(input_image, mask_grow_pixels):
-    safe_print("Starting...")
+    print("Starting...")
     image = load_image_and_resize(input_image, TARGET_WIDTH, TARGET_HEIGHT)
     processor, segmentation_model = load_segmentation_model()
     mask = generate_clothing_mask(segmentation_model, processor, image)
-    mask_path, mask = save_black_inverted_alpha(mask, MASK_OUTPUT_PATH, mask_grow_pixels)
-    print(f"Input image type: {type(image)}")
-    print(f"Mask image type: {type(mask)}")
+
+    mask_path, mask = save_black_inverted_alpha(mask, mask_grow_pixels)
 
     return mask_path, mask, image
 
@@ -357,7 +466,7 @@ def process_image(
     mask,
     prompt,
     checkpoint_model,
-    lora_model,
+    lora_model_id,
     num_inference_steps,
     guidance_scale,
     sampler_name,
@@ -367,14 +476,10 @@ def process_image(
     invert_sigmas,
 ):
     try:
-        device = get_device()
+        pipe = load_pipeline(checkpoint_model)
 
-        pipe = load_pipeline(
-            checkpoint_model, device, CACHE_DIR, LOW_RAM_MODE, LOW_VRAM_MODE
-        )
-
-        if lora_model != "None":
-            pipe = apply_lora(pipe, lora_model)
+        if lora_model_id != "None":
+            pipe = apply_lora(pipe, lora_model_id)
 
         pipe = apply_scheduler(
             pipe,
@@ -399,19 +504,15 @@ def process_image(
             img,
             mask,
             pipe,
-            device,
             prompt,
             num_inference_steps,
             guidance_scale,
         )
 
-        # Generate a unique output path if the file exists
-        output_path = get_unique_output_path(INPAINTED_OUTPUT_PATH)
-
-        save_result(result, image, output_path)
+        output_path = save_result(result, image)
         return output_path
     except Exception as e:
-        safe_print(f"Error: {e}")
+        print(f"Error: {e}")
 
 
 # Define Gradio UI
@@ -420,19 +521,34 @@ with gr.Blocks() as app:
     gr.Markdown(
         "## Select a checkpoint and LoRA from Hugging Face and apply inpainting."
     )
+    submit_button = gr.Button("Submit", elem_id="submit_button")
     with gr.Row():
         with gr.Column():
-            image_input = gr.Image(type="pil", label="Upload Image", height=320)
-            submit_button = gr.Button("Submit", elem_id="submit_button")
-            prompt_input = gr.Textbox(value=PROMPT, placeholder="Prompt", label="Prompt")
+            image_input = gr.Image(type="pil", label="Upload Image", height=400)
+        with gr.Column():
+            mask_output = gr.Image(
+                label="Generated Mask", elem_id="mask_output", height=400
+            )
+        with gr.Column():
+            final_output = gr.Image(
+                label="Final Image", elem_id="final_output", height=400
+            )
+
+    with gr.Row():
+        with gr.Column():
+            prompt_input = gr.Textbox(
+                value=PROMPT, placeholder="Prompt", label="Prompt"
+            )
+        with gr.Column():
             checkpoint_input = gr.Dropdown(
                 choices=AVAILABLE_CHECKPOINTS,
                 value=AVAILABLE_CHECKPOINTS[0],
                 label="Checkpoint Model",
             )
             lora_input = gr.Dropdown(
-                choices=AVAILABLE_LORAS, value=AVAILABLE_LORAS[1], label="LoRA Model"
+                choices=LORA_MODEL_IDS, value=LORA_MODEL_IDS[1], label="LoRA Model"
             )
+        with gr.Column():
             steps_input = gr.Slider(5, 50, value=25, step=1, label="Inference Steps")
             guidance_input = gr.Slider(
                 1.0, 15.0, value=7.5, step=0.5, label="Guidance Scale"
@@ -443,6 +559,7 @@ with gr.Blocks() as app:
             sampler_input = gr.Dropdown(
                 choices=["Euler", "DPM++ 2M"], value=SAMPLER_NAME, label="Sampler Type"
             )
+        with gr.Column():
             use_karras_sigmas_input = gr.Checkbox(
                 value=USE_KARRAS_SIGMAS, label="Use Karras Sigmas"
             )
@@ -452,14 +569,12 @@ with gr.Blocks() as app:
             use_beta_sigmas_input = gr.Checkbox(
                 value=USE_BETA_SIGMAS, label="Use Beta Sigmas"
             )
-            invert_sigmas_input = gr.Checkbox(value=INVERT_SIGMAS, label="Invert Sigmas")
+            invert_sigmas_input = gr.Checkbox(
+                value=INVERT_SIGMAS, label="Invert Sigmas"
+            )
 
-            mask = gr.State()  # Stores intermediate data
-            image = gr.State()  # Stores intermediate data
-
-        with gr.Column():
-            mask_output = gr.Image(label="Generated Mask", elem_id="mask_output", height=320)
-            final_output = gr.Image(label="Final Image", elem_id="final_output", height=320)
+        mask = gr.State()  # Stores intermediate data
+        image = gr.State()  # Stores intermediate data
 
     submit_button.click(
         fn=generate_mask,
@@ -492,11 +607,13 @@ with gr.Blocks() as app:
 
 
 if __name__ == "__main__":
+    setup_logger()
+    get_system_information()
+    login_hf()
     app.launch(
         server_name="0.0.0.0",
-        server_port=7861,
+        server_port=7862,
         debug=True,
         show_api=False,
-        inbrowser=True,
     )
     print("Gradio app is running and ready to use at http://127.0.0.1:7860")
