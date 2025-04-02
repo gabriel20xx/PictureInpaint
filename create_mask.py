@@ -88,15 +88,13 @@ def save_black_inverted_alpha(clothes_mask, output_path, mask_grow_pixels=15):
     # Save as grayscale PNG
     Image.fromarray(mask).save(output_path)
     print(f"Mask saved: {output_path}")
-    return output_path, mask
 
 
 def generate_mask(input_image, mask_grow_pixels):
     print("Starting...")
     processor, segmentation_model = load_segmentation_model()
     mask = generate_clothing_mask(segmentation_model, processor, input_image)
-
-    mask_path, mask = save_black_inverted_alpha(mask, mask_grow_pixels)
+    save_black_inverted_alpha(mask, mask_grow_pixels)
 
 
 # ======== MAIN FUNCTION ========
