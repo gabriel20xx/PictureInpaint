@@ -142,8 +142,6 @@ def generate_clothing_mask(model, processor, image):
 
 # ======== APPLY MASK GROW AND SAVE ========
 def save_black_inverted_alpha(clothes_mask, output_path, mask_grow_pixels=15):
-    mask = (clothes_mask * 255).astype(np.uint8)  # Convert 1s to 255 (white mask)
-
     dilate_size = max(5, mask_grow_pixels)  # Ensure mask grows sufficiently
     close_size = max(3, mask_grow_pixels // 3)  # Ensure minimum size of 3
 
@@ -155,7 +153,7 @@ def save_black_inverted_alpha(clothes_mask, output_path, mask_grow_pixels=15):
     )
 
     # --- Expand the mask slightly to remove unwanted artifacts ---
-    mask = cv2.dilate(mask, dilate_kernel, iterations=1)
+    mask = cv2.dilate(clothes_mask, dilate_kernel, iterations=1)
 
     # --- Smooth edges to avoid harsh transitions ---
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, close_kernel)
@@ -164,8 +162,12 @@ def save_black_inverted_alpha(clothes_mask, output_path, mask_grow_pixels=15):
     blur_ksize = max(5, (mask_grow_pixels // 2) * 2 + 1)  # Ensure odd kernel size
     mask = cv2.GaussianBlur(mask, (blur_ksize, blur_ksize), sigmaX=0, sigmaY=0)
 
-    # Save as grayscale PNG
     Image.fromarray(mask).save(output_path)
+    safe_print(f"Mask saved: {output_path}")
+    # mask = (clothes_mask * 255).astype(np.uint8)  # Convert 1s to 255 (white mask)
+
+    # Save as grayscale PNG
+    # Image.fromarray(mask).save(output_path)
     safe_print(f"Mask saved: {output_path}")
     return output_path, mask
 
