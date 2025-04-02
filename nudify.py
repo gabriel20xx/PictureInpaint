@@ -288,7 +288,6 @@ def apply_lora(pipe, lora_model_id):
         print(f"Loading LoRA: {save_path}")
         state_dict = load_file(save_path)
         pipe.load_lora_weights(state_dict)
-        pipe.to("cuda")  # Move to GPU if available
 
         print(f"LoRA {model_filename} applied successfully.")
     else:
@@ -386,7 +385,6 @@ def load_pipeline(model):
                 time.sleep(5)
                 retries += 1
 
-    pipe.to(device)
     print(f"✅ FluxFillPipeline loaded on {device}.")
     return pipe
 
@@ -401,7 +399,6 @@ def inpaint(
     guidance_scale,
 ):
     device = get_device()
-    pipe.to(device)
 
     # Free memory after loading
     if device == "cuda":
@@ -411,6 +408,8 @@ def inpaint(
         print("Enabled xFormers optimization.")
         torch.backends.cuda.matmul.allow_tf32 = True
         print("Matmul allow tf32 enabled.")
+
+    pipe.to(device)
 
     try:
         print(f"Starting inpainting process on {device}...")
