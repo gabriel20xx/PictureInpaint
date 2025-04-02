@@ -10,36 +10,6 @@ import os
 from PIL import Image
 
 
-# ======== LOAD INPUT IMAGE ========
-def load_image_and_resize(image, target_width, target_height):
-    if image is None:
-        raise ValueError("No image provided.")
-
-    try:
-        # Ensure the image is in RGB format
-        image = image.convert("RGB")
-        print("Loaded image successfully.")
-        original_width, original_height = image.size
-    except Exception as e:
-        raise IOError(f"Failed to process image: {e}")
-
-    # Resize only if the original image is larger than the target dimensions
-    if original_width > target_width and original_height > target_height:
-        aspect_ratio = original_width / original_height
-
-        if (target_width / target_height) > aspect_ratio:
-            new_height = target_height
-            new_width = int(aspect_ratio * target_height)
-        else:
-            new_width = target_width
-            new_height = int(target_width / aspect_ratio)
-
-        return image.resize((new_width, new_height), Image.LANCZOS)
-
-    # If the original image is smaller, return it as is
-    return image
-
-
 # ======== LOAD SEGMENTATION MODEL ========
 def load_segmentation_model():
     try:
@@ -119,3 +89,21 @@ def save_black_inverted_alpha(clothes_mask, output_path, mask_grow_pixels=15):
     Image.fromarray(mask).save(output_path)
     print(f"Mask saved: {output_path}")
     return output_path, mask
+
+
+def generate_mask(input_image, mask_grow_pixels):
+    print("Starting...")
+    processor, segmentation_model = load_segmentation_model()
+    mask = generate_clothing_mask(segmentation_model, processor, input_image)
+
+    mask_path, mask = save_black_inverted_alpha(mask, mask_grow_pixels)
+
+
+# ======== MAIN FUNCTION ========
+if __name__ == "__main__":
+    input_image_path = "input/image.jpg"  # Replace with your image path
+    mask_grow_pixels = 15  # Adjust as needed
+
+    input_image = Image.open(input_image_path)
+    generate_mask(input_image, mask_grow_pixels)
+    print("Process completed.")
